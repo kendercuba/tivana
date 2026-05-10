@@ -51,16 +51,22 @@ jobs:
             exit 1
           fi
 
+      # Hostinger suele exigir FTP sobre TLS (FTPS explícito en 21). FTP plano desde
+      # GitHub Actions a veces agota por timeout (control socket).
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
           port: 21
+          timeout: 600000
+          security: loose
           server-dir: public_html/
           local-dir: ./frontend/dist/
           dangerous-clean-slate: true
+          log-level: minimal
           exclude: |
             **/.git*
             **/.github*
