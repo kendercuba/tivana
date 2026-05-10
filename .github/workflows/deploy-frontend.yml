@@ -1,11 +1,12 @@
-# Build del frontend y subida por SFTP (puerto 65002) con OpenSSH sftp + sshpass.
+# Build del frontend y subida a Hostinger por FTPS (puerto 21).
 #
-# - Cuentas Hostinger suelen ser solo-SFTP (shell nologin): no usar "ssh comando".
-# - lftp "open -u user,pass" rompe si la contraseña lleva una coma → pide password y falla.
-# - sftp -b no mete la contraseña en la línea open; sshpass la inyecta bien.
+# FileZilla con "TLS" en el log = FTPS explícito en 21 (no es lo mismo que SFTP:65002).
+# El error "Permission denied (publickey,password)" en Actions era el intento por SSH/SFTP
+# (puerto 65002); muchas cuentas Hostinger aceptan FTP/FTPS en 21 con user/pass y no
+# autentican igual por el subsistema SSH.
 #
-# Secrets: FTP_HOST, FTP_USERNAME, FTP_PASSWORD (iguales que FileZilla SFTP :65002).
-# Opcional: FTP_REMOTE_PATH (ruta absoluta a public_html).
+# Secrets: FTP_HOST (sin ftp://), FTP_USERNAME, FTP_PASSWORD
+# Mismo criterio que: https://www.hostinger.com/support/4480505-how-to-connect-to-your-hosting-using-ftp-in-hostinger/
 
 name: Deploy Frontend to Hostinger
 
@@ -54,60 +55,19 @@ jobs:
             exit 1
           fi
 
-      - name: Resolver carpeta remota (public_html)
-        id: remote
-        env:
-          OVERRIDE: ${{ secrets.FTP_REMOTE_PATH }}
-          FTP_USER: ${{ secrets.FTP_USERNAME }}
-        run: |
-          if [ -n "$OVERRIDE" ]; then
-            echo "target=${OVERRIDE}" >> "$GITHUB_OUTPUT"
-            echo "Destino remoto (FTP_REMOTE_PATH): ${OVERRIDE}"
-          else
-            T="/home/${FTP_USER}/domains/tivana.me/public_html"
-            echo "target=${T}" >> "$GITHUB_OUTPUT"
-            echo "Destino remoto (por defecto): ${T}"
-          fi
-
-      # Subsistema SFTP (no login shell): válido con nologin.
-      - name: Deploy SFTP — OpenSSH sftp batch (puerto 65002)
-        env:
-          FTP_HOST: ${{ secrets.FTP_HOST }}
-          FTP_USER: ${{ secrets.FTP_USERNAME }}
-          SSHPASS: ${{ secrets.FTP_PASSWORD }}
-          REMOTE_TARGET: ${{ steps.remote.outputs.target }}
-        run: |
-          set -euo pipefail
-          sudo apt-get update && sudo apt-get install -y sshpass openssh-client
-
-          if [ ! -d frontend/dist ]; then
-            echo "::error::No existe frontend/dist tras el build."
-            exit 1
-          fi
-          if [ -z "${REMOTE_TARGET}" ]; then
-            echo "::error::REMOTE_TARGET vacío."
-            exit 1
-          fi
-
-          export SSHPASS
-          {
-            echo "cd ${REMOTE_TARGET}"
-            echo "lcd frontend/dist"
-            echo "put -r ."
-            echo "bye"
-          } > /tmp/sftp-batch.txt
-
-          echo "::group::sftp upload (verbose)"
-          # Sin esto, ssh prueba todas las claves del runner y puede fallar antes
-          # de usar la contraseña con sshpass → "Permission denied (publickey,password)".
-          sshpass -e sftp -v -b /tmp/sftp-batch.txt -P 65002 \
-            -o StrictHostKeyChecking=accept-new \
-            -o ConnectTimeout=120 \
-            -o PubkeyAuthentication=no \
-            -o PreferredAuthentications=keyboard-interactive,password \
-            -o NumberOfPasswordPrompts=1 \
-            "${FTP_USER}@${FTP_HOST}"
-          echo "::endgroup::"
-          rm -f /tmp/sftp-batch.txt
-
-          echo "::notice::SFTP terminado. Si falló el cd, define el secret FTP_REMOTE_PATH con la ruta exacta de public_html."
+      - name: Deploy FTPS (puerto 21 — como FileZilla con TLS)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          timeout: 600000
+          security: loose
+          server-dir: public_html/
+          local-dir: ./frontend/dist/
+          dangerous-clean-slate: true
+          exclude: |
+            **/.git*
+            **/.github*
