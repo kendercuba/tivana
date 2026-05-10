@@ -1,9 +1,18 @@
-# Despliegue del build de Vite (frontend/dist) a Hostinger por FTP.
-# Secrets obligatorios en el repo: Settings → Secrets and variables → Actions
-#   FTP_HOST       → servidor FTP (ej. ftp.tudominio.com)
-#   FTP_USERNAME   → usuario FTP
-#   FTP_PASSWORD   → contraseña FTP (si no la sabes: Hostinger → Cambiar la contraseña de FTP)
-# Hostinger (tivana.me): carpeta web suele ser public_html (ver debajo server-dir).
+# Build del frontend y subida a Hostinger por SFTP (puerto 65002).
+#
+# Hostinger: la cuenta suele usar SFTP en 65002 (no FTP 21). GitHub Actions
+# a menudo no puede conectar al puerto 21 (timeout).
+#
+# Secrets en repo → Settings → Secrets → Actions:
+#   FTP_HOST       → misma IP/host que en el panel (ej. 46.202.x.x)
+#   FTP_USERNAME   → usuario (ej. u680931061)
+#   FTP_PASSWORD   → contraseña FTP/SFTP
+#
+# Opcional:
+#   FTP_REMOTE_PATH → ruta ABSOLUTA a public_html si la por defecto falla.
+#                     En File Manager de Hostinger suele verse en la barra (copiar).
+#
+# En hPanel activa acceso remoto / SFTP si tu plan lo permite.
 
 name: Deploy Frontend to Hostinger
 
@@ -36,7 +45,7 @@ jobs:
           npm ci
           npm run build
 
-      - name: Comprobar secrets FTP (evita error genérico «server»)
+      - name: Comprobar secrets de despliegue
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
@@ -47,26 +56,38 @@ jobs:
           [ -z "$FTP_USERNAME" ] && missing="$missing FTP_USERNAME"
           [ -z "$FTP_PASSWORD" ] && missing="$missing FTP_PASSWORD"
           if [ -n "$missing" ]; then
-            echo "::error::Faltan secrets en GitHub: $missing. Repo → Settings → Secrets and variables → Actions → New repository secret."
+            echo "::error::Faltan secrets: $missing"
             exit 1
           fi
 
-      # Hostinger suele exigir FTP sobre TLS (FTPS explícito en 21). FTP plano desde
-      # GitHub Actions a veces agota por timeout (control socket).
-      - name: Deploy via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      - name: Resolver carpeta remota (public_html)
+        id: remote
+        env:
+          OVERRIDE: ${{ secrets.FTP_REMOTE_PATH }}
+          FTP_USER: ${{ secrets.FTP_USERNAME }}
+        run: |
+          if [ -n "$OVERRIDE" ]; then
+            echo "target=${OVERRIDE}" >> "$GITHUB_OUTPUT"
+            echo "Destino remoto (FTP_REMOTE_PATH): ${OVERRIDE}"
+          else
+            T="/home/${FTP_USER}/domains/tivana.me/public_html"
+            echo "target=${T}" >> "$GITHUB_OUTPUT"
+            echo "Destino remoto (por defecto): ${T}"
+          fi
+
+      # Puerto 65002 = SFTP/SSH en Hostinger (misma contraseña que FTP).
+      # appleboy/scp-action envía por SSH/tar (no depende de rsync en el servidor).
+      - name: Deploy por SCP / SSH (puerto 65002)
+        uses: appleboy/scp-action@v1.0.0
         with:
-          server: ${{ secrets.FTP_HOST }}
+          host: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftps
-          port: 21
-          timeout: 600000
-          security: loose
-          server-dir: public_html/
-          local-dir: ./frontend/dist/
-          dangerous-clean-slate: true
-          log-level: minimal
-          exclude: |
-            **/.git*
-            **/.github*
+          port: "65002"
+          timeout: 3m
+          command_timeout: 15m
+          source: frontend/dist
+          target: ${{ steps.remote.outputs.target }}
+          overwrite: true
+          rm: false
+          debug: false
