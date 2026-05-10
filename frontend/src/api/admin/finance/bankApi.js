@@ -76,7 +76,7 @@ export async function fetchBankImportBatches({ limit = 50 } = {}) {
     credentials: "include",
   });
 
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(data.message || "Error cargando historial de importaciones.");
   }
@@ -117,7 +117,7 @@ export async function fetchBankBatchMovements(batchId) {
     { credentials: "include" }
   );
 
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(data.message || "Error cargando movimientos del lote.");
   }
@@ -183,7 +183,7 @@ export async function fetchBankSummary({ bankAccountId, dateFrom, dateTo } = {})
     credentials: "include",
   });
 
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(data.message || "Error cargando resumen.");
   }
