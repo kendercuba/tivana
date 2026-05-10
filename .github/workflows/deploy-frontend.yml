@@ -2,8 +2,8 @@
 # Secrets obligatorios en el repo: Settings → Secrets and variables → Actions
 #   FTP_HOST       → servidor FTP (ej. ftp.tudominio.com)
 #   FTP_USERNAME   → usuario FTP
-#   FTP_PASSWORD   → contraseña FTP
-# Opcional en Hostinger: revisar que la carpeta remota coincida (server-dir si hace falta).
+#   FTP_PASSWORD   → contraseña FTP (si no la sabes: Hostinger → Cambiar la contraseña de FTP)
+# Hostinger (tivana.me): carpeta web suele ser public_html (ver debajo server-dir).
 
 name: Deploy Frontend to Hostinger
 
@@ -57,6 +57,8 @@ jobs:
           server: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
+          port: 21
+          server-dir: public_html/
           local-dir: ./frontend/dist/
           dangerous-clean-slate: true
           exclude: |
