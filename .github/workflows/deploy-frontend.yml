@@ -1,9 +1,14 @@
-# Build del frontend y subida por SSH al puerto 65002 (SFTP Hostinger).
+# Build del frontend y subida por SFTP (puerto 65002) con lftp mirror.
 #
-# Secrets: FTP_HOST, FTP_USERNAME, FTP_PASSWORD (iguales que en FileZilla SFTP).
-# Opcional: FTP_REMOTE_PATH = ruta absoluta a public_html si la por defecto falla.
+# Por qué fallaba "ssh ... comando": las cuentas Hostinger suelen tener shell
+# /sbin/nologin (solo SFTP). ssh ejecuta un shell remoto → error nologin.
+# FileZilla funciona porque usa el protocolo SFTP, no comandos SSH.
 #
-# En hPanel activa acceso SFTP / remote access si aplica.
+# El monorepo no es la causa: antes el workflow probablemente usaba FTP:21
+# (SamKirkland). Aquí el build sigue siendo "cd frontend && npm ci && build".
+#
+# Secrets: FTP_HOST, FTP_USERNAME, FTP_PASSWORD (iguales que FileZilla SFTP).
+# Opcional: FTP_REMOTE_PATH (ruta absoluta a public_html).
 
 name: Deploy Frontend to Hostinger
 
@@ -67,42 +72,41 @@ jobs:
             echo "Destino remoto (por defecto): ${T}"
           fi
 
-      # Evita appleboy/scp-action: en Hostinger suele fallar por rutas o auth.
-      # ssh + tar solo necesita OpenSSH en el servidor (puerto 65002).
-      - name: Deploy SSH — tar por stdin (puerto 65002)
+      # Solo SFTP (sin shell remoto): compatible con cuentas nologin.
+      - name: Deploy SFTP — lftp mirror (puerto 65002)
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
           FTP_USER: ${{ secrets.FTP_USERNAME }}
-          SSHPASS: ${{ secrets.FTP_PASSWORD }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           REMOTE_TARGET: ${{ steps.remote.outputs.target }}
         run: |
           set -euo pipefail
-          sudo apt-get update && sudo apt-get install -y sshpass openssh-client
+          sudo apt-get update && sudo apt-get install -y lftp
 
           if [ ! -d frontend/dist ]; then
             echo "::error::No existe frontend/dist tras el build."
             exit 1
           fi
-
           if [ -z "${REMOTE_TARGET}" ]; then
-            echo "::error::REMOTE_TARGET vacío (bug en paso anterior)."
+            echo "::error::REMOTE_TARGET vacío."
             exit 1
           fi
 
-          export SSHPASS
-          SSH_BASE=(ssh -p 65002 -o StrictHostKeyChecking=accept-new -o ConnectTimeout=120 -o ServerAliveInterval=30)
-          DEST="${FTP_USER}@${FTP_HOST}"
+          cat > /tmp/lftp.rc <<EOF
+          set net:timeout 120
+          set net:max-retries 5
+          set sftp:auto-confirm yes
+          set cmd:fail-exit yes
+          open -u ${FTP_USER},${FTP_PASSWORD} sftp://${FTP_HOST}:65002
+          cd ${REMOTE_TARGET}
+          lcd frontend/dist
+          mirror -R --delete --verbose .
+          bye
+          EOF
 
-          echo "::group::Probar SSH / crear carpeta remota"
-          sshpass -e "${SSH_BASE[@]}" "$DEST" \
-            "set -e; mkdir -p '${REMOTE_TARGET}'; echo OK; ls -la '${REMOTE_TARGET}' | head -20"
+          echo "::group::lftp mirror"
+          lftp -f /tmp/lftp.rc
           echo "::endgroup::"
+          rm -f /tmp/lftp.rc
 
-          echo "::group::Vaciar destino y subir archivos"
-          sshpass -e "${SSH_BASE[@]}" "$DEST" \
-            "rm -rf '${REMOTE_TARGET}'/*"
-          tar czf - -C frontend/dist . | sshpass -e "${SSH_BASE[@]}" "$DEST" \
-            "tar xzf - -C '${REMOTE_TARGET}'"
-          echo "::endgroup::"
-
-          echo "::notice::Listo. Sitio en ${REMOTE_TARGET}"
+          echo "::notice::Despliegue SFTP terminado."
