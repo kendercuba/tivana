@@ -1,6 +1,7 @@
 // src/context/UserContext.jsx
 import { createContext, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
+import { getApiBaseUrl } from "../api/apiBase.js";
 
 export const UserContext = createContext();
 
@@ -19,7 +20,7 @@ export function UserProvider({ children }) {
   const refreshCart = async (sessionUser = user) => {
     if (sessionUser) {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/cart`, {
+        const res = await fetch(`${getApiBaseUrl()}/cart`, {
           credentials: "include",
         });
         const data = await res.json();
@@ -60,7 +61,7 @@ export function UserProvider({ children }) {
       let sessionUser = null;
 
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/account`, {
+        const res = await fetch(`${getApiBaseUrl()}/account`, {
           credentials: "include",
         });
 
@@ -96,7 +97,7 @@ export function UserProvider({ children }) {
     const guestCart = JSON.parse(localStorage.getItem("guest_cart") || "[]");
     if (guestCart.length > 0) {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/cart/merge`, {
+        const res = await fetch(`${getApiBaseUrl()}/cart/merge`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -119,7 +120,7 @@ export function UserProvider({ children }) {
 
   const logout = async () => {
     try {
-      await fetch(`${import.meta.env.VITE_API_URL}/logout`, {
+      await fetch(`${getApiBaseUrl()}/logout`, {
         method: "POST",
         credentials: "include",
       });

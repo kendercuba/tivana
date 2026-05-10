@@ -6,6 +6,9 @@
 # autentican igual por el subsistema SSH.
 #
 # Secrets: FTP_HOST (sin ftp://), FTP_USERNAME, FTP_PASSWORD
+# Opcional pero muy recomendado: VITE_API_URL = URL del backend (ej. https://tu-api.onrender.com
+# sin /api al final). Si falta, el build usará /api relativo al dominio del sitio (Hostinger
+# no tiene tu Express; la tienda y sesión contra la API remota no funcionarán bien).
 # Mismo criterio que: https://www.hostinger.com/support/4480505-how-to-connect-to-your-hosting-using-ftp-in-hostinger/
 
 name: Deploy Frontend to Hostinger
@@ -36,6 +39,8 @@ jobs:
 
       - name: Install dependencies and build
         working-directory: frontend
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: |
           npm ci
           npm run build

@@ -122,6 +122,11 @@ function App() {
       />
       <Route path="/admin/products/import" element={  <AdminLayout> <AdminImportWizard />  </AdminLayout> }/>
 
+      {/* Zona Market: URL canónica /zonamarket (no usar /zona-market ni mayúsculas). */}
+      <Route
+        path="/zona-market"
+        element={<Navigate to="/zonamarket" replace />}
+      />
       <Route path="/zonamarket" element={<ZonaMarketLayout />}>
         <Route index element={<ZonaMarketHome />} />
       </Route>
