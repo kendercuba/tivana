@@ -98,9 +98,14 @@ jobs:
           } > /tmp/sftp-batch.txt
 
           echo "::group::sftp upload (verbose)"
+          # Sin esto, ssh prueba todas las claves del runner y puede fallar antes
+          # de usar la contraseña con sshpass → "Permission denied (publickey,password)".
           sshpass -e sftp -v -b /tmp/sftp-batch.txt -P 65002 \
             -o StrictHostKeyChecking=accept-new \
             -o ConnectTimeout=120 \
+            -o PubkeyAuthentication=no \
+            -o PreferredAuthentications=keyboard-interactive,password \
+            -o NumberOfPasswordPrompts=1 \
             "${FTP_USER}@${FTP_HOST}"
           echo "::endgroup::"
           rm -f /tmp/sftp-batch.txt
