@@ -44,7 +44,7 @@ export default function Header() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  if (loading || !cart) return null;
+  if (loading) return null;
 
   return (
   <header className="bg-black shadow-md sticky top-0 z-50 w-full border-blue-500">
