@@ -1,4 +1,4 @@
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useLocation } from "react-router-dom";
 import LoyverseVentasCargar from "./LoyverseVentasCargar.jsx";
 import {
   LoyverseResumenVentas,
@@ -19,8 +19,11 @@ function ventasSubFromSearch(searchParams) {
 
 export default function LoyverseImport() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
   const mainTab = mainTabFromSearch(searchParams);
   const ventasSub = ventasSubFromSearch(searchParams);
+
+  const isZonaMarketAdmin = location.pathname.startsWith("/zonamarket/admin");
 
   function setMainTab(next) {
     if (next === "compras") {
@@ -67,21 +70,25 @@ export default function LoyverseImport() {
 
   return (
     <div>
-      <div className="px-4 sm:px-6 lg:px-8 pt-2 pb-0 w-full max-w-[1600px]">
-        <div className="flex flex-wrap gap-1 border-b border-gray-200">
-          {mainTabBtn("ventas", "Ventas")}
-          {mainTabBtn("compras", "Compras")}
-        </div>
-      </div>
-
-      {mainTab === "ventas" && (
-        <div className="border-b border-gray-200 bg-gray-100/90 px-4 sm:px-6 lg:px-8">
-          <div className="w-full max-w-[1600px] flex flex-wrap gap-1.5 py-1.5">
-            {ventasSubBtn("resumen", "Resumen de ventas")}
-            {ventasSubBtn("pago", "Ventas por tipo de pago")}
-            {ventasSubBtn("cargar", "Cargar excel")}
+      {!isZonaMarketAdmin && (
+        <>
+          <div className="px-4 sm:px-6 lg:px-8 pt-2 pb-0 w-full max-w-[1600px]">
+            <div className="flex flex-wrap gap-1 border-b border-gray-200">
+              {mainTabBtn("ventas", "Ventas")}
+              {mainTabBtn("compras", "Compras")}
+            </div>
           </div>
-        </div>
+
+          {mainTab === "ventas" && (
+            <div className="border-b border-gray-200 bg-gray-100/90 px-4 sm:px-6 lg:px-8">
+              <div className="w-full max-w-[1600px] flex flex-wrap gap-1.5 py-1.5">
+                {ventasSubBtn("resumen", "Resumen de ventas")}
+                {ventasSubBtn("pago", "Ventas por tipo de pago")}
+                {ventasSubBtn("cargar", "Cargar excel")}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {mainTab === "ventas" && ventasSub === "cargar" && <LoyverseVentasCargar />}

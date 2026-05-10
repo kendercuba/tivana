@@ -1,8 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { Building2, Home, PieChart, Store } from "lucide-react";
+import { Building2, Home, PieChart, ShoppingBag, Store, Upload } from "lucide-react";
 
 const ZM_FINANCE_BASE = "/zonamarket/admin/finance";
+const LOYVERSE_PATH = `${ZM_FINANCE_BASE}/loyverse`;
+
+function loyverseQs(tab, ventasSub) {
+  const q = new URLSearchParams();
+  q.set("tab", tab);
+  if (ventasSub != null && ventasSub !== "") q.set("ventasSub", ventasSub);
+  return `?${q.toString()}`;
+}
 
 function financeNavClass({ isActive }) {
   return [
@@ -35,6 +43,42 @@ export default function ZonaMarketAdminLayout() {
   );
   const [bankingOpen, setBankingOpen] = useState(isUnderBanking);
   const [financeFlyoutOpen, setFinanceFlyoutOpen] = useState(false);
+
+  const onLoyverseRoute = location.pathname === LOYVERSE_PATH;
+  const lv = new URLSearchParams(location.search);
+  const lvTab = lv.get("tab") === "compras" ? "compras" : "ventas";
+  const lvVentasSub = (() => {
+    const s = lv.get("ventasSub");
+    if (s === "cargar") return "cargar";
+    if (s === "pago") return "pago";
+    if (s === "resumen") return "resumen";
+    return "resumen";
+  })();
+
+  const isUnderLoyverseVentasTabs =
+    onLoyverseRoute &&
+    lvTab === "ventas" &&
+    (lvVentasSub === "resumen" || lvVentasSub === "pago");
+  const [loyverseOpen, setLoyverseOpen] = useState(onLoyverseRoute);
+  const [loyverseVentasOpen, setLoyverseVentasOpen] = useState(
+    isUnderLoyverseVentasTabs
+  );
+
+  useEffect(() => {
+    if (!onLoyverseRoute) setLoyverseOpen(false);
+  }, [onLoyverseRoute]);
+
+  useEffect(() => {
+    if (!isUnderLoyverseVentasTabs) setLoyverseVentasOpen(false);
+  }, [isUnderLoyverseVentasTabs]);
+
+  const loyverseExpanded = onLoyverseRoute || loyverseOpen;
+  const loyverseVentasExpanded =
+    isUnderLoyverseVentasTabs || loyverseVentasOpen;
+
+  function loyverseItemClass(active) {
+    return financeNavClass({ isActive: active });
+  }
 
   useEffect(() => {
     if (!isUnderBanking) setBankingOpen(false);
@@ -171,13 +215,118 @@ export default function ZonaMarketAdminLayout() {
                 )}
               </div>
 
-              <NavLink
-                to={`${ZM_FINANCE_BASE}/loyverse`}
-                className={cn(financeNavClass, "mt-1 flex items-center gap-2")}
-              >
-                <Store className="h-4 w-4 shrink-0 opacity-80" />
-                Loyverse
-              </NavLink>
+              <div className="mt-1">
+                <button
+                  type="button"
+                  onClick={() => setLoyverseOpen((o) => !o)}
+                  className={cn(
+                    "flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-white/10",
+                    onLoyverseRoute ? "font-semibold text-white" : "text-white/85"
+                  )}
+                  aria-expanded={loyverseExpanded}
+                  aria-controls="zm-loyverse-submenu"
+                >
+                  <span
+                    className="inline-block w-4 text-center text-[10px] text-zm-yellow"
+                    aria-hidden
+                  >
+                    {loyverseExpanded ? "▾" : "▸"}
+                  </span>
+                  <Store className="mr-1 h-4 w-4 shrink-0 opacity-80" />
+                  <span>Loyverse</span>
+                </button>
+
+                {loyverseExpanded && (
+                  <ul
+                    id="zm-loyverse-submenu"
+                    className="mt-1 ml-2 flex flex-col gap-0.5 border-l border-zm-yellow/35 pl-3"
+                  >
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => setLoyverseVentasOpen((o) => !o)}
+                        className={cn(
+                          "flex w-full items-center gap-1 rounded-lg px-2 py-1 text-left text-sm hover:bg-white/10",
+                          isUnderLoyverseVentasTabs
+                            ? "font-semibold text-white"
+                            : "text-white/85"
+                        )}
+                        aria-expanded={loyverseVentasExpanded}
+                        aria-controls="zm-loyverse-ventas-submenu"
+                      >
+                        <span
+                          className="inline-block w-3 text-center text-[10px] text-zm-yellow"
+                          aria-hidden
+                        >
+                          {loyverseVentasExpanded ? "▾" : "▸"}
+                        </span>
+                        Ventas
+                      </button>
+                      {loyverseVentasExpanded && (
+                        <ul
+                          id="zm-loyverse-ventas-submenu"
+                          className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l border-white/20 pl-2"
+                        >
+                          <li>
+                            <Link
+                              to={`${LOYVERSE_PATH}${loyverseQs("ventas", "resumen")}`}
+                              className={loyverseItemClass(
+                                onLoyverseRoute &&
+                                  lvTab === "ventas" &&
+                                  lvVentasSub === "resumen"
+                              )}
+                            >
+                              Resumen de ventas
+                            </Link>
+                          </li>
+                          <li>
+                            <Link
+                              to={`${LOYVERSE_PATH}${loyverseQs("ventas", "pago")}`}
+                              className={loyverseItemClass(
+                                onLoyverseRoute &&
+                                  lvTab === "ventas" &&
+                                  lvVentasSub === "pago"
+                              )}
+                            >
+                              Ventas por tipo de pago
+                            </Link>
+                          </li>
+                        </ul>
+                      )}
+                    </li>
+                    <li>
+                      <Link
+                        to={`${LOYVERSE_PATH}${loyverseQs("compras", null)}`}
+                        className={cn(
+                          "flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors",
+                          onLoyverseRoute && lvTab === "compras"
+                            ? "font-semibold text-white bg-zm-red/35 ring-1 ring-zm-yellow/50"
+                            : "text-white/90 hover:bg-white/10 hover:text-white"
+                        )}
+                      >
+                        <ShoppingBag className="h-4 w-4 shrink-0 opacity-80" />
+                        Compras
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        to={`${LOYVERSE_PATH}${loyverseQs("ventas", "cargar")}`}
+                        className={cn(
+                          "flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors",
+                          onLoyverseRoute &&
+                            lvTab === "ventas" &&
+                            lvVentasSub === "cargar"
+                            ? "font-semibold text-white bg-zm-red/35 ring-1 ring-zm-yellow/50"
+                            : "text-white/90 hover:bg-white/10 hover:text-white"
+                        )}
+                      >
+                        <Upload className="h-4 w-4 shrink-0 opacity-80" />
+                        Cargar excel
+                      </Link>
+                    </li>
+                  </ul>
+                )}
+              </div>
             </div>
           </div>
         </nav>
@@ -231,14 +380,60 @@ export default function ZonaMarketAdminLayout() {
                 </NavLink>
               ))}
 
-              <NavLink
-                to={`${ZM_FINANCE_BASE}/loyverse`}
-                className={cn(financeNavClass, "mt-2 flex items-center gap-2")}
+              <p className="mt-3 px-2 text-[10px] font-semibold uppercase tracking-wider text-zm-yellow/95">
+                Loyverse
+              </p>
+              <Link
+                to={`${LOYVERSE_PATH}${loyverseQs("ventas", "resumen")}`}
+                className={loyverseItemClass(
+                  onLoyverseRoute &&
+                    lvTab === "ventas" &&
+                    lvVentasSub === "resumen"
+                )}
                 onClick={() => setFinanceFlyoutOpen(false)}
               >
-                <Store className="h-4 w-4 shrink-0" />
-                Loyverse
-              </NavLink>
+                Resumen de ventas
+              </Link>
+              <Link
+                to={`${LOYVERSE_PATH}${loyverseQs("ventas", "pago")}`}
+                className={loyverseItemClass(
+                  onLoyverseRoute &&
+                    lvTab === "ventas" &&
+                    lvVentasSub === "pago"
+                )}
+                onClick={() => setFinanceFlyoutOpen(false)}
+              >
+                Ventas por tipo de pago
+              </Link>
+              <Link
+                to={`${LOYVERSE_PATH}${loyverseQs("compras", null)}`}
+                className={cn(
+                  financeNavClass({
+                    isActive: onLoyverseRoute && lvTab === "compras",
+                  }),
+                  "flex items-center gap-2"
+                )}
+                onClick={() => setFinanceFlyoutOpen(false)}
+              >
+                <ShoppingBag className="h-4 w-4 shrink-0 opacity-80" />
+                Compras
+              </Link>
+              <Link
+                to={`${LOYVERSE_PATH}${loyverseQs("ventas", "cargar")}`}
+                className={cn(
+                  financeNavClass({
+                    isActive:
+                      onLoyverseRoute &&
+                      lvTab === "ventas" &&
+                      lvVentasSub === "cargar",
+                  }),
+                  "flex items-center gap-2"
+                )}
+                onClick={() => setFinanceFlyoutOpen(false)}
+              >
+                <Upload className="h-4 w-4 shrink-0 opacity-80" />
+                Cargar excel
+              </Link>
             </nav>
           </div>
         </>
