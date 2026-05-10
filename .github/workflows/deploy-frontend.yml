@@ -5,7 +5,9 @@
 # (puerto 65002); muchas cuentas Hostinger aceptan FTP/FTPS en 21 con user/pass y no
 # autentican igual por el subsistema SSH.
 #
-# Secrets: FTP_HOST (sin ftp://), FTP_USERNAME, FTP_PASSWORD
+# Secrets: FTP_HOST (sin ftp://), FTP_USERNAME, FTP_PASSWORD — deben ser los del MISMO plan
+# Hostinger que ves en hPanel (ej. usuario u680931061). Si coinciden con otra cuenta o otro hosting,
+# el deploy será "correcto" pero los archivos irán a otro sitio.
 # Opcional: FTP_SERVER_DIR — carpeta remota donde cae el sitio (debe terminar en /).
 #   · Cuenta principal (en FileZilla ves la carpeta "public_html"): deja el secret vacío → usa public_html/
 #   · Usuario FTP limitado a la web (al conectar ya ves index.html en la raíz): pon ./ en el secret
@@ -39,6 +41,17 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Marca de despliegue (busca deploy-info.txt en Hostinger tras el FTP)
+        run: |
+          mkdir -p frontend/public
+          {
+            echo "github_sha=${{ github.sha }}"
+            echo "run_id=${{ github.run_id }}"
+            echo "built_utc=$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            echo "workflow=${{ github.workflow }}"
+          } > frontend/public/deploy-info.txt
+          cat frontend/public/deploy-info.txt
+
       - name: Install dependencies and build
         working-directory: frontend
         env:
@@ -66,6 +79,8 @@ jobs:
         run: |
           echo "Archivos en frontend/dist (primer nivel):"
           ls -la frontend/dist
+          echo "Marca (debe existir en el servidor si el FTP apunta bien):"
+          cat frontend/dist/deploy-info.txt || true
           echo "Total aproximado:"
           find frontend/dist -type f | wc -l
 
