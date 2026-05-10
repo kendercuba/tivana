@@ -16,7 +16,16 @@ export function getApiBaseUrl() {
     return "/api";
   }
 
-  const raw = import.meta.env.VITE_API_URL;
+  let raw = import.meta.env.VITE_API_URL;
+  if (raw === undefined || raw === null || String(raw).trim() === "") {
+    // En Hostinger solo hay estático: /api relativo devuelve index.html (HTML ≠ JSON).
+    if (typeof window !== "undefined") {
+      const h = window.location.hostname;
+      if (h === "tivana.me" || h === "www.tivana.me") {
+        raw = "https://api.tivana.me";
+      }
+    }
+  }
   if (raw === undefined || raw === null || String(raw).trim() === "") {
     return "/api";
   }
