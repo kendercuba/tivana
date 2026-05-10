@@ -28,6 +28,28 @@ import ZonaMarketHome from './pages/zonamarket/ZonaMarketHome.jsx';
 import ZonaMarketAdminLayout from './components/zonamarket/ZonaMarketAdminLayout.jsx';
 import { FinanceBasePathProvider } from './contexts/FinanceBasePathContext.jsx';
 
+/** Última ruta: evita pantalla en blanco si la URL no coincide con ninguna ruta definida. */
+function NotFound() {
+  return (
+    <div className="min-h-screen bg-gray-50 px-4 py-16 text-center">
+      <h1 className="text-xl font-semibold text-gray-900">Página no encontrada</h1>
+      <p className="mx-auto mt-3 max-w-md text-sm text-gray-600">
+        Si entraste a una URL válida (por ejemplo{" "}
+        <strong className="font-medium text-gray-800">/zonamarket</strong>) y ves esto, suele ser
+        caché: el navegador o el CDN del hosting pueden estar sirviendo un{" "}
+        <code className="rounded bg-gray-200 px-1 text-xs">index.js</code> antiguo. En Hostinger,
+        vacía la caché (hPanel / LiteSpeed / CDN) y recarga con Ctrl+F5.
+      </p>
+      <a
+        className="mt-6 inline-block text-sm font-medium text-blue-600 underline"
+        href="/"
+      >
+        Ir al inicio
+      </a>
+    </div>
+  );
+}
+
 function FinanceImportarLegacyRedirect() {
   const [searchParams] = useSearchParams();
   const tab = searchParams.get('tab');
@@ -149,6 +171,8 @@ function App() {
         <Route path="finance/loyverse" element={<LoyverseImport />} />
         <Route path="finance/:section" element={<FinanceBankHub />} />
       </Route>
+
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }
