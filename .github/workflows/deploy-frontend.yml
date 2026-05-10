@@ -8,10 +8,9 @@
 # Secrets: FTP_HOST (sin ftp://), FTP_USERNAME, FTP_PASSWORD — deben ser los del MISMO plan
 # Hostinger que ves en hPanel (ej. usuario u680931061). Si coinciden con otra cuenta o otro hosting,
 # el deploy será "correcto" pero los archivos irán a otro sitio.
-# Opcional: FTP_SERVER_DIR — carpeta remota donde cae el sitio (debe terminar en /).
-#   · Cuenta principal (en FileZilla ves la carpeta "public_html"): deja el secret vacío → usa public_html/
-#   · Usuario FTP limitado a la web (al conectar ya ves index.html en la raíz): pon ./ en el secret
-# Si subes a la ruta equivocada, public_html en el administrador no cambiará de fecha.
+# Opcional: FTP_SERVER_DIR — carpeta remota bajo la raíz FTP (la acción exige barra final).
+#   · Vacío → public_html/ (si tu FTP entra en home y ves la carpeta public_html).
+#   · ./  → raíz de la sesión FTP (Hostinger: evita public_html/public_html anidada si ya estás en el sitio).
 # Opcional: VITE_API_URL (URL del backend sin /api final).
 # https://www.hostinger.com/support/4480505-how-to-connect-to-your-hosting-using-ftp-in-hostinger/
 
@@ -84,6 +83,23 @@ jobs:
           echo "Total aproximado:"
           find frontend/dist -type f | wc -l
 
+      # Evita depender de la expresión ${{ secrets.x || 'default' }} (a veces no aplica el secret bien).
+      - name: Resolver carpeta remota FTP
+        id: ftp_target
+        env:
+          FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR }}
+        run: |
+          set -e
+          if [ -z "${FTP_SERVER_DIR:-}" ]; then
+            TARGET="public_html"
+          else
+            TARGET="$FTP_SERVER_DIR"
+          fi
+          # Una sola barra final (lo exige la acción)
+          TARGET="${TARGET%/}/"
+          echo "server_dir=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "Usando server-dir=$TARGET (si es ./ → raíz de sesión FTP)"
+
       - name: Deploy FTPS (puerto 21 — como FileZilla con TLS)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
@@ -94,8 +110,7 @@ jobs:
           port: 21
           timeout: 600000
           security: loose
-          # Si FTP_SERVER_DIR está vacío → public_html/ (cuenta principal). Si tu FTP entra ya en la raíz del sitio, define secret FTP_SERVER_DIR=./
-          server-dir: ${{ secrets.FTP_SERVER_DIR != '' && secrets.FTP_SERVER_DIR || 'public_html/' }}
+          server-dir: ${{ steps.ftp_target.outputs.server_dir }}
           local-dir: ./frontend/dist/
           dangerous-clean-slate: true
           log-level: verbose
