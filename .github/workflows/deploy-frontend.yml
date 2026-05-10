@@ -1,35 +1,39 @@
-name: 🚀 Deploy Frontend to Hostinger
+name: Deploy Frontend to Hostinger
 
 on:
   push:
     branches:
       - main
+    paths:
+      - "frontend/**"
+      - ".github/workflows/deploy-frontend.yml"
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout repo
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: 🛠️ Setup Node
+      - name: Setup Node
         uses: actions/setup-node@v3
         with:
           node-version: 18
 
-      - name: 📦 Install dependencies & build
+      - name: Install dependencies and build
+        working-directory: frontend
         run: |
-          npm install
+          npm ci
           npm run build
 
-      - name: 📤 Deploy via FTP
+      - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: dist/
+          local-dir: ./frontend/dist/
           dangerous-clean-slate: true
           exclude: |
             **/.git*
