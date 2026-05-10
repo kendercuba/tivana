@@ -1,13 +1,10 @@
-# Build del frontend y subida por SFTP (puerto 65002) con lftp mirror.
+# Build del frontend y subida por SFTP (puerto 65002) con OpenSSH sftp + sshpass.
 #
-# Por qué fallaba "ssh ... comando": las cuentas Hostinger suelen tener shell
-# /sbin/nologin (solo SFTP). ssh ejecuta un shell remoto → error nologin.
-# FileZilla funciona porque usa el protocolo SFTP, no comandos SSH.
+# - Cuentas Hostinger suelen ser solo-SFTP (shell nologin): no usar "ssh comando".
+# - lftp "open -u user,pass" rompe si la contraseña lleva una coma → pide password y falla.
+# - sftp -b no mete la contraseña en la línea open; sshpass la inyecta bien.
 #
-# El monorepo no es la causa: antes el workflow probablemente usaba FTP:21
-# (SamKirkland). Aquí el build sigue siendo "cd frontend && npm ci && build".
-#
-# Secrets: FTP_HOST, FTP_USERNAME, FTP_PASSWORD (iguales que FileZilla SFTP).
+# Secrets: FTP_HOST, FTP_USERNAME, FTP_PASSWORD (iguales que FileZilla SFTP :65002).
 # Opcional: FTP_REMOTE_PATH (ruta absoluta a public_html).
 
 name: Deploy Frontend to Hostinger
@@ -72,16 +69,16 @@ jobs:
             echo "Destino remoto (por defecto): ${T}"
           fi
 
-      # Solo SFTP (sin shell remoto): compatible con cuentas nologin.
-      - name: Deploy SFTP — lftp mirror (puerto 65002)
+      # Subsistema SFTP (no login shell): válido con nologin.
+      - name: Deploy SFTP — OpenSSH sftp batch (puerto 65002)
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
           FTP_USER: ${{ secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          SSHPASS: ${{ secrets.FTP_PASSWORD }}
           REMOTE_TARGET: ${{ steps.remote.outputs.target }}
         run: |
           set -euo pipefail
-          sudo apt-get update && sudo apt-get install -y lftp
+          sudo apt-get update && sudo apt-get install -y sshpass openssh-client
 
           if [ ! -d frontend/dist ]; then
             echo "::error::No existe frontend/dist tras el build."
@@ -92,21 +89,20 @@ jobs:
             exit 1
           fi
 
-          cat > /tmp/lftp.rc <<EOF
-          set net:timeout 120
-          set net:max-retries 5
-          set sftp:auto-confirm yes
-          set cmd:fail-exit yes
-          open -u ${FTP_USER},${FTP_PASSWORD} sftp://${FTP_HOST}:65002
-          cd ${REMOTE_TARGET}
-          lcd frontend/dist
-          mirror -R --delete --verbose .
-          bye
-          EOF
+          export SSHPASS
+          {
+            echo "cd ${REMOTE_TARGET}"
+            echo "lcd frontend/dist"
+            echo "put -r ."
+            echo "bye"
+          } > /tmp/sftp-batch.txt
 
-          echo "::group::lftp mirror"
-          lftp -f /tmp/lftp.rc
+          echo "::group::sftp upload (verbose)"
+          sshpass -e sftp -v -b /tmp/sftp-batch.txt -P 65002 \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=120 \
+            "${FTP_USER}@${FTP_HOST}"
           echo "::endgroup::"
-          rm -f /tmp/lftp.rc
+          rm -f /tmp/sftp-batch.txt
 
-          echo "::notice::Despliegue SFTP terminado."
+          echo "::notice::SFTP terminado. Si falló el cd, define el secret FTP_REMOTE_PATH con la ruta exacta de public_html."
