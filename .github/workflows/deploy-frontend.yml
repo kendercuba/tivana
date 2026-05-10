@@ -1,22 +1,14 @@
-# Build del frontend y subida a Hostinger por SFTP (puerto 65002).
+# Build del frontend y subida por SSH al puerto 65002 (SFTP Hostinger).
 #
-# Hostinger: la cuenta suele usar SFTP en 65002 (no FTP 21). GitHub Actions
-# a menudo no puede conectar al puerto 21 (timeout).
+# Secrets: FTP_HOST, FTP_USERNAME, FTP_PASSWORD (iguales que en FileZilla SFTP).
+# Opcional: FTP_REMOTE_PATH = ruta absoluta a public_html si la por defecto falla.
 #
-# Secrets en repo → Settings → Secrets → Actions:
-#   FTP_HOST       → misma IP/host que en el panel (ej. 46.202.x.x)
-#   FTP_USERNAME   → usuario (ej. u680931061)
-#   FTP_PASSWORD   → contraseña FTP/SFTP
-#
-# Opcional:
-#   FTP_REMOTE_PATH → ruta ABSOLUTA a public_html si la por defecto falla.
-#                     En File Manager de Hostinger suele verse en la barra (copiar).
-#
-# En hPanel activa acceso remoto / SFTP si tu plan lo permite.
+# En hPanel activa acceso SFTP / remote access si aplica.
 
 name: Deploy Frontend to Hostinger
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -75,19 +67,42 @@ jobs:
             echo "Destino remoto (por defecto): ${T}"
           fi
 
-      # Puerto 65002 = SFTP/SSH en Hostinger (misma contraseña que FTP).
-      # appleboy/scp-action envía por SSH/tar (no depende de rsync en el servidor).
-      - name: Deploy por SCP / SSH (puerto 65002)
-        uses: appleboy/scp-action@v1.0.0
-        with:
-          host: ${{ secrets.FTP_HOST }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: "65002"
-          timeout: 3m
-          command_timeout: 15m
-          source: frontend/dist
-          target: ${{ steps.remote.outputs.target }}
-          overwrite: true
-          rm: false
-          debug: false
+      # Evita appleboy/scp-action: en Hostinger suele fallar por rutas o auth.
+      # ssh + tar solo necesita OpenSSH en el servidor (puerto 65002).
+      - name: Deploy SSH — tar por stdin (puerto 65002)
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USERNAME }}
+          SSHPASS: ${{ secrets.FTP_PASSWORD }}
+          REMOTE_TARGET: ${{ steps.remote.outputs.target }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y sshpass openssh-client
+
+          if [ ! -d frontend/dist ]; then
+            echo "::error::No existe frontend/dist tras el build."
+            exit 1
+          fi
+
+          if [ -z "${REMOTE_TARGET}" ]; then
+            echo "::error::REMOTE_TARGET vacío (bug en paso anterior)."
+            exit 1
+          fi
+
+          export SSHPASS
+          SSH_BASE=(ssh -p 65002 -o StrictHostKeyChecking=accept-new -o ConnectTimeout=120 -o ServerAliveInterval=30)
+          DEST="${FTP_USER}@${FTP_HOST}"
+
+          echo "::group::Probar SSH / crear carpeta remota"
+          sshpass -e "${SSH_BASE[@]}" "$DEST" \
+            "set -e; mkdir -p '${REMOTE_TARGET}'; echo OK; ls -la '${REMOTE_TARGET}' | head -20"
+          echo "::endgroup::"
+
+          echo "::group::Vaciar destino y subir archivos"
+          sshpass -e "${SSH_BASE[@]}" "$DEST" \
+            "rm -rf '${REMOTE_TARGET}'/*"
+          tar czf - -C frontend/dist . | sshpass -e "${SSH_BASE[@]}" "$DEST" \
+            "tar xzf - -C '${REMOTE_TARGET}'"
+          echo "::endgroup::"
+
+          echo "::notice::Listo. Sitio en ${REMOTE_TARGET}"
