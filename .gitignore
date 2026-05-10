@@ -17,3 +17,5 @@ npm-debug.log*
 # Backend: datos locales (ya ignorado en backend/.gitignore para rutas relativas)
 backend/uploads/
 backend/backup/
+*.dump
+backup_local.dump
