@@ -6,10 +6,12 @@
 # autentican igual por el subsistema SSH.
 #
 # Secrets: FTP_HOST (sin ftp://), FTP_USERNAME, FTP_PASSWORD
-# Opcional pero muy recomendado: VITE_API_URL = URL del backend (ej. https://tu-api.onrender.com
-# sin /api al final). Si falta, el build usará /api relativo al dominio del sitio (Hostinger
-# no tiene tu Express; la tienda y sesión contra la API remota no funcionarán bien).
-# Mismo criterio que: https://www.hostinger.com/support/4480505-how-to-connect-to-your-hosting-using-ftp-in-hostinger/
+# Opcional: FTP_SERVER_DIR — carpeta remota donde cae el sitio (debe terminar en /).
+#   · Cuenta principal (en FileZilla ves la carpeta "public_html"): deja el secret vacío → usa public_html/
+#   · Usuario FTP limitado a la web (al conectar ya ves index.html en la raíz): pon ./ en el secret
+# Si subes a la ruta equivocada, public_html en el administrador no cambiará de fecha.
+# Opcional: VITE_API_URL (URL del backend sin /api final).
+# https://www.hostinger.com/support/4480505-how-to-connect-to-your-hosting-using-ftp-in-hostinger/
 
 name: Deploy Frontend to Hostinger
 
@@ -60,6 +62,13 @@ jobs:
             exit 1
           fi
 
+      - name: Resumen del artefacto a subir
+        run: |
+          echo "Archivos en frontend/dist (primer nivel):"
+          ls -la frontend/dist
+          echo "Total aproximado:"
+          find frontend/dist -type f | wc -l
+
       - name: Deploy FTPS (puerto 21 — como FileZilla con TLS)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
@@ -70,9 +79,11 @@ jobs:
           port: 21
           timeout: 600000
           security: loose
-          server-dir: public_html/
+          # Si FTP_SERVER_DIR está vacío → public_html/ (cuenta principal). Si tu FTP entra ya en la raíz del sitio, define secret FTP_SERVER_DIR=./
+          server-dir: ${{ secrets.FTP_SERVER_DIR != '' && secrets.FTP_SERVER_DIR || 'public_html/' }}
           local-dir: ./frontend/dist/
           dangerous-clean-slate: true
+          log-level: verbose
           exclude: |
             **/.git*
             **/.github*
