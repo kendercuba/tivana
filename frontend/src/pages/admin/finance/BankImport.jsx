@@ -9,6 +9,7 @@ import {
   deleteBankImportBatch,
   patchBankImportBatchAccount,
 } from "../../../api/admin/finance/bankApi";
+import { useFinanceBasePath } from "../../../contexts/FinanceBasePathContext.jsx";
 
 function formatDateShort(value) {
   if (!value) return "—";
@@ -27,6 +28,8 @@ export default function BankImport({
   accountsRefreshToken = 0,
   categoriesRefreshToken = 0,
 }) {
+  const financeBase = useFinanceBasePath();
+  const isZonaMarket = financeBase.startsWith("/zonamarket");
   const [file, setFile] = useState(null);
   const [bankAccountsAll, setBankAccountsAll] = useState([]);
 
@@ -171,7 +174,7 @@ export default function BankImport({
 
     if (activeAccounts.length === 0) {
       alert(
-        "Agrega o activa al menos una cuenta en la pestaña «Cuentas bancarias»."
+        "Agrega o activa al menos una cuenta: menú lateral → Cuentas bancarias → Gestionar cuentas."
       );
       return;
     }
@@ -189,32 +192,52 @@ export default function BankImport({
   }
 
   return (
-    <div className="px-4 pt-4 pb-6 space-y-4">
+    <div
+      className={`px-4 pt-4 pb-6 space-y-4 ${isZonaMarket ? "font-zm" : ""}`}
+    >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h1 className="text-xl font-bold text-gray-800">Importar banco</h1>
-          <p className="text-xs text-gray-500 mt-0.5 max-w-xl">
-            Excel BNC, historial y movimientos por lote abajo. Resúmenes en el
-            panel de finanzas.
-          </p>
+          <h1
+            className={
+              isZonaMarket
+                ? "text-xl font-bold text-zm-sidebar"
+                : "text-xl font-bold text-gray-800"
+            }
+          >
+            Subir excel
+          </h1>
         </div>
         <Link
-          to="/admin/finance/dashboard"
-          className="text-xs text-blue-600 hover:underline whitespace-nowrap pt-0.5"
+          to={`${financeBase}/dashboard`}
+          className={
+            isZonaMarket
+              ? "text-xs font-medium text-zm-green hover:text-zm-green-dark hover:underline whitespace-nowrap pt-0.5"
+              : "text-xs text-blue-600 hover:underline whitespace-nowrap pt-0.5"
+          }
         >
           Ver resúmenes (panel) →
         </Link>
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 max-w-4xl">
+      <div
+        className={
+          isZonaMarket
+            ? "bg-white rounded-lg shadow-md shadow-zm-sidebar/5 border border-zm-yellow/55 ring-1 ring-zm-green/10 p-3 max-w-4xl"
+            : "bg-white rounded-lg shadow-sm border border-gray-200 p-3 max-w-4xl"
+        }
+      >
         <form onSubmit={handleSubmit} className="space-y-2">
           <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
             <div className="flex-1 min-w-[220px]">
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Archivo Excel del banco
-              </label>
+              <span className="sr-only">Archivo Excel del banco</span>
               <div className="flex flex-wrap items-center gap-2">
-                <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-gray-300 bg-gray-50 text-sm text-gray-800 cursor-pointer hover:bg-gray-100 focus-within:ring-2 focus-within:ring-blue-500">
+                <label
+                  className={
+                    isZonaMarket
+                      ? "inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-zm-green/35 bg-zm-cream text-sm text-zm-sidebar cursor-pointer hover:bg-zm-yellow/25 focus-within:ring-2 focus-within:ring-zm-yellow"
+                      : "inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-gray-300 bg-gray-50 text-sm text-gray-800 cursor-pointer hover:bg-gray-100 focus-within:ring-2 focus-within:ring-blue-500"
+                  }
+                >
                   <input
                     type="file"
                     accept=".xls,.xlsx"
@@ -237,28 +260,15 @@ export default function BankImport({
             <button
               type="submit"
               disabled={loading}
-              className="shrink-0 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-1.5 rounded-md text-sm font-medium"
+              className={
+                isZonaMarket
+                  ? "shrink-0 bg-zm-red hover:bg-zm-red/90 disabled:bg-zm-red/40 text-white px-4 py-1.5 rounded-md text-sm font-semibold"
+                  : "shrink-0 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-1.5 rounded-md text-sm font-medium"
+              }
             >
               {loading ? "Importando..." : "Importar archivo"}
             </button>
           </div>
-
-          <details className="group rounded border border-gray-100 bg-gray-50/80 px-2 py-1">
-            <summary className="text-[11px] text-gray-500 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-1">
-              <span className="text-gray-400 group-open:rotate-90 transition-transform inline-block">
-                ▸
-              </span>
-              ¿Cómo se elige la cuenta si el Excel trae ***XXXX?
-            </summary>
-            <p className="text-[11px] text-gray-500 mt-1 pl-4 border-l border-gray-200 leading-snug">
-              Si el estado de cuenta trae el número enmascarado (***XXXX), la carga
-              se asigna a esa cuenta: primero por «Últimos dígitos BNC», y si no,
-              por el texto del nombre en «Cuentas bancarias». Si el archivo no trae
-              ***XXXX, se usa la primera cuenta activa como respaldo. Puedes
-              corregir la cuenta de cada lote en la columna «Cuenta» del historial
-              de abajo.
-            </p>
-          </details>
         </form>
       </div>
 
@@ -269,9 +279,29 @@ export default function BankImport({
       )}
 
       {result && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-          <h2 className="text-green-800 font-semibold">Importación completada</h2>
-          <p className="text-sm text-green-700 mt-1 space-y-1">
+        <div
+          className={
+            isZonaMarket
+              ? "bg-zm-cream border border-zm-green/40 rounded-lg p-3 ring-1 ring-zm-yellow/40"
+              : "bg-green-50 border border-green-200 rounded-lg p-3"
+          }
+        >
+          <h2
+            className={
+              isZonaMarket
+                ? "text-zm-sidebar font-semibold"
+                : "text-green-800 font-semibold"
+            }
+          >
+            Importación completada
+          </h2>
+          <p
+            className={
+              isZonaMarket
+                ? "text-sm text-zm-green mt-1 space-y-1"
+                : "text-sm text-green-700 mt-1 space-y-1"
+            }
+          >
             <span className="block">
               Filas leídas en el Excel:{" "}
               <span className="font-bold">{result?.data?.totalInFile ?? 0}</span>
@@ -285,7 +315,11 @@ export default function BankImport({
               <span className="font-bold">{result?.data?.skippedDuplicate ?? 0}</span>
             </span>
             {result?.data?.importBatchId != null && (
-              <span className="block text-green-900">
+              <span
+                className={
+                  isZonaMarket ? "block text-zm-sidebar" : "block text-green-900"
+                }
+              >
                 Lote guardado: <span className="font-mono font-bold">#{result.data.importBatchId}</span>
                 {" "}
                 — ya está seleccionado abajo para ver sus movimientos.
@@ -294,7 +328,13 @@ export default function BankImport({
             {result?.data?.accountResolution?.fromExcel &&
               result.data.accountResolution.lastFour &&
               !result.data.accountResolution.excelDigitsUnmatched && (
-              <span className="block text-green-900 pt-2 border-t border-green-200 mt-2">
+              <span
+                className={
+                  isZonaMarket
+                    ? "block text-zm-sidebar pt-2 border-t border-zm-green/25 mt-2"
+                    : "block text-green-900 pt-2 border-t border-green-200 mt-2"
+                }
+              >
                 Cuenta según el Excel (terminación …{result.data.accountResolution.lastFour}
                 ):{" "}
                 <span className="font-semibold">
@@ -309,7 +349,13 @@ export default function BankImport({
               </span>
             )}
             {result?.data?.accountResolution?.bncFieldUnsetReminder && (
-              <span className="block text-gray-600 text-xs pt-2 mt-2 border-t border-green-200">
+              <span
+                className={
+                  isZonaMarket
+                    ? "block text-zm-green/80 text-xs pt-2 mt-2 border-t border-zm-green/20"
+                    : "block text-gray-600 text-xs pt-2 mt-2 border-t border-green-200"
+                }
+              >
                 {result.data.accountResolution.bncFieldUnsetReminder}
               </span>
             )}
@@ -320,7 +366,13 @@ export default function BankImport({
             )}
             {result?.data?.accountResolution &&
               !result.data.accountResolution.fromExcel && (
-              <span className="block text-gray-600 text-xs pt-2 mt-2 border-t border-green-200">
+              <span
+                className={
+                  isZonaMarket
+                    ? "block text-zm-green/80 text-xs pt-2 mt-2 border-t border-zm-green/20"
+                    : "block text-gray-600 text-xs pt-2 mt-2 border-t border-green-200"
+                }
+              >
                 No se detectó ***XXXX en el encabezado del Excel; se usó la primera
                 cuenta activa como respaldo. Puedes ajustar la cuenta en el
                 historial de importaciones.
@@ -330,21 +382,34 @@ export default function BankImport({
         </div>
       )}
 
-      <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-        <h2 className="text-base font-semibold text-gray-800 mb-1">
+      <section
+        className={
+          isZonaMarket
+            ? "bg-white rounded-xl border border-zm-yellow/50 shadow-md shadow-zm-sidebar/5 ring-1 ring-zm-green/10 p-4"
+            : "bg-white rounded-xl border border-gray-200 shadow-sm p-4"
+        }
+      >
+        <h2
+          className={
+            isZonaMarket
+              ? "text-base font-semibold text-zm-sidebar mb-3"
+              : "text-base font-semibold text-gray-800 mb-3"
+          }
+        >
           Historial de importaciones BNC
         </h2>
-        <p className="text-[11px] text-gray-500 mb-3 leading-snug">
-          Clic en una fila para ver movimientos del lote. En «Cuenta» puedes
-          corregir la asignación si el Excel eligió mal. La papelera borra el lote
-          y sus movimientos guardados.
-        </p>
         {batchesError && (
           <p className="text-sm text-red-600 mb-2">{batchesError}</p>
         )}
         <div className="overflow-x-auto max-h-[min(17rem,42vh)] overflow-y-auto border rounded-lg">
           <table className="min-w-full text-sm">
-            <thead className="bg-gray-100 sticky top-0">
+            <thead
+              className={
+                isZonaMarket
+                  ? "bg-zm-yellow/35 text-zm-sidebar sticky top-0"
+                  : "bg-gray-100 sticky top-0"
+              }
+            >
               <tr>
                 <th className="text-left px-3 py-2">Fecha carga</th>
                 <th className="text-left px-3 py-2">Archivo</th>
@@ -362,9 +427,15 @@ export default function BankImport({
               {batches.map((b) => (
                 <tr
                   key={b.id}
-                  className={`border-t cursor-pointer hover:bg-blue-50 ${
-                    selectedBatchId === b.id ? "bg-blue-50" : ""
-                  }`}
+                  className={
+                    isZonaMarket
+                      ? `border-t cursor-pointer border-zm-green/10 hover:bg-zm-yellow/20 ${
+                          selectedBatchId === b.id ? "bg-zm-yellow/30" : ""
+                        }`
+                      : `border-t cursor-pointer hover:bg-blue-50 ${
+                          selectedBatchId === b.id ? "bg-blue-50" : ""
+                        }`
+                  }
                   onClick={() => setSelectedBatchId(b.id)}
                 >
                   <td className="px-3 py-2 whitespace-nowrap">
@@ -398,7 +469,13 @@ export default function BankImport({
                     </select>
                   </td>
                   <td className="px-3 py-2 text-right">{b.rows_in_file}</td>
-                  <td className="px-3 py-2 text-right text-green-700 font-medium">
+                  <td
+                    className={
+                      isZonaMarket
+                        ? "px-3 py-2 text-right text-zm-green font-semibold"
+                        : "px-3 py-2 text-right text-green-700 font-medium"
+                    }
+                  >
                     {b.rows_inserted}
                   </td>
                   <td className="px-3 py-2 text-right text-gray-500">
@@ -407,7 +484,11 @@ export default function BankImport({
                   <td className="px-3 py-2">
                     <button
                       type="button"
-                      className="text-blue-600 text-xs hover:underline"
+                      className={
+                        isZonaMarket
+                          ? "text-zm-green text-xs font-medium hover:underline hover:text-zm-green-dark"
+                          : "text-blue-600 text-xs hover:underline"
+                      }
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedBatchId(b.id);
@@ -484,12 +565,9 @@ export default function BankImport({
             )}
           </>
         }
-        hintNoContext="Elige un lote en la tabla de historial."
         emptyLoadedMessage={
           <p className="text-sm text-gray-500 p-4">
-            Este lote no tiene movimientos nuevos guardados (por ejemplo, todos
-            eran duplicados) o el lote es anterior a la columna{" "}
-            <code className="text-xs">import_batch_id</code>.
+            Este lote no tiene movimientos guardados.
           </p>
         }
       />

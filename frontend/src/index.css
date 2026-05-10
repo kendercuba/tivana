@@ -7,3 +7,20 @@
     @apply bg-walmart min-h-screen;
   }
 }
+
+/**
+ * Barra lateral admin Zona Market: fondo y texto forzados en hex para que el
+ * contraste no dependa solo de utilidades Tailwind (evita texto blanco sobre
+ * fondo crema si alguna capa no aplica).
+ */
+@layer components {
+  .zm-admin-aside {
+    background-color: #2c4819;
+    color: #ffffff;
+  }
+
+  .zm-admin-aside a,
+  .zm-admin-aside button {
+    color: inherit;
+  }
+}

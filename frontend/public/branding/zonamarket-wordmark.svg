@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 58" role="img" aria-labelledby="zm-title">
+  <!-- Wordmark sin lema; colores marca #E63946 / #4F772D -->
+  <title id="zm-title">Zona Market</title>
+  <rect fill="#E63946" x="6" y="6" width="228" height="22" rx="7"/>
+  <text fill="#FFFFFF" font-family="Poppins, system-ui, sans-serif" font-weight="700" font-size="14" x="120" y="21" text-anchor="middle">ZONA</text>
+  <rect fill="#4F772D" x="6" y="30" width="228" height="22" rx="7"/>
+  <text fill="#FFFFFF" font-family="Poppins, system-ui, sans-serif" font-weight="700" font-size="14" x="120" y="45" text-anchor="middle">MARKET</text>
+</svg>

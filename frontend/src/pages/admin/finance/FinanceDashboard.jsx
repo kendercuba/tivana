@@ -4,6 +4,7 @@ import {
   fetchBankSummary,
   fetchBankAccounts,
 } from "../../../api/admin/finance/bankApi";
+import { useFinanceBasePath } from "../../../contexts/FinanceBasePathContext.jsx";
 
 function formatBs(value) {
   return new Intl.NumberFormat("es-VE", {
@@ -13,6 +14,8 @@ function formatBs(value) {
 }
 
 export default function FinanceDashboard() {
+  const financeBase = useFinanceBasePath();
+  const isZonaMarket = financeBase.startsWith("/zonamarket");
   const [bankAccounts, setBankAccounts] = useState([]);
   const [summaryAccount, setSummaryAccount] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -59,29 +62,66 @@ export default function FinanceDashboard() {
   }, []);
 
   return (
-    <div className="p-6 space-y-8">
+    <div className={isZonaMarket ? "space-y-8 p-4 sm:p-6" : "space-y-8 p-6"}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">
-            Finanzas — panel banco
-          </h1>
-          <p className="text-sm text-gray-500 mt-1 max-w-xl">
-            Resúmenes por categoría a partir de los movimientos guardados en
-            PostgreSQL. Para subir Excel y ver el historial de cargas, usa
-            «Cargar excel» en Datos bancarios.
-          </p>
+          {isZonaMarket ? (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-wide text-zm-green">
+                Zona Market · Finanzas
+              </p>
+              <h1 className="mt-1 font-zm text-2xl font-bold tracking-tight text-zm-sidebar">
+                Resumen por categoría
+              </h1>
+              <p className="text-sm text-zm-green/90 mt-2 max-w-xl leading-relaxed">
+                Totales a partir de los movimientos ya guardados. Para importar
+                Excel y ver cargas, usa{" "}
+                <strong className="font-medium text-zm-sidebar">
+                  Finanzas → Cuentas bancarias → Subir excel
+                </strong>{" "}
+                en el menú.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-2xl font-bold text-gray-800">
+                Finanzas — panel banco
+              </h1>
+              <p className="text-sm text-gray-500 mt-1 max-w-xl">
+                Resúmenes por categoría a partir de los movimientos guardados en
+                PostgreSQL. Para subir Excel y ver el historial de cargas, usa
+                «Subir excel» (Finanzas → Cuentas bancarias) en el menú lateral.
+              </p>
+            </>
+          )}
         </div>
         <Link
-          to="/admin/finance/importar"
-          className="text-sm text-blue-600 hover:underline"
+          to={`${financeBase}/cargar-excel`}
+          className={
+            isZonaMarket
+              ? "text-sm font-medium text-zm-green hover:text-zm-green-dark hover:underline"
+              : "text-sm text-blue-600 hover:underline"
+          }
         >
-          Ir a datos bancarios →
+          Ir a subir excel →
         </Link>
       </div>
 
-      <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">
-          Resumen por categoría (movimientos guardados)
+      <section
+        className={
+          isZonaMarket
+            ? "rounded-2xl border border-zm-yellow/60 bg-white p-5 shadow-md shadow-zm-sidebar/10 ring-1 ring-zm-green/10"
+            : "rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
+        }
+      >
+        <h2
+          className={
+            isZonaMarket
+              ? "mb-4 font-zm text-lg font-semibold text-zm-sidebar"
+              : "mb-4 text-lg font-semibold text-gray-800"
+          }
+        >
+          Movimientos guardados
         </h2>
         <form
           onSubmit={loadSummary}
@@ -123,7 +163,11 @@ export default function FinanceDashboard() {
           <button
             type="submit"
             disabled={summaryLoading}
-            className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50"
+            className={
+              isZonaMarket
+                ? "rounded-lg bg-zm-red px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-zm-red/90 disabled:opacity-50"
+                : "rounded-lg bg-gray-800 px-4 py-2 text-sm text-white disabled:opacity-50"
+            }
           >
             {summaryLoading ? "Cargando…" : "Actualizar resumen"}
           </button>
@@ -133,7 +177,9 @@ export default function FinanceDashboard() {
         )}
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-gray-100">
+            <thead
+              className={isZonaMarket ? "bg-zm-yellow/35 text-zm-sidebar" : "bg-gray-100"}
+            >
               <tr>
                 <th className="text-left px-3 py-2">Categoría</th>
                 <th className="text-left px-3 py-2">Tipo</th>
@@ -148,10 +194,22 @@ export default function FinanceDashboard() {
                   <td className="px-3 py-2">{row.category}</td>
                   <td className="px-3 py-2 capitalize">{row.movement_type}</td>
                   <td className="px-3 py-2 text-right">{row.tx_count}</td>
-                  <td className="px-3 py-2 text-right text-green-700">
+                  <td
+                    className={
+                      isZonaMarket
+                        ? "px-3 py-2 text-right text-zm-green"
+                        : "px-3 py-2 text-right text-green-700"
+                    }
+                  >
                     {formatBs(row.total_credit_bs)}
                   </td>
-                  <td className="px-3 py-2 text-right text-red-600">
+                  <td
+                    className={
+                      isZonaMarket
+                        ? "px-3 py-2 text-right text-zm-red"
+                        : "px-3 py-2 text-right text-red-600"
+                    }
+                  >
                     {formatBs(row.total_debit_bs)}
                   </td>
                 </tr>

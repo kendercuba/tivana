@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useSearchParams } from 'react-router-dom';
 import DefaultLayout from './layouts/DefaultLayout';
 import Home from './pages/Home';
 import Products from './pages/Products';
@@ -21,9 +21,36 @@ import AccountSummary from './pages/account/Summary';
 import AccountOrders from './pages/account/Orders';
 import AccountProfile from './pages/account/Profile';
 import FinanceDashboard from './pages/admin/finance/FinanceDashboard.jsx';
-import ImportarDatos from './pages/admin/finance/ImportarDatos.jsx';
+import FinanceBankHub from './pages/admin/finance/FinanceBankHub.jsx';
 import LoyverseImport from './pages/admin/finance/LoyverseImport.jsx';
+import ZonaMarketLayout from './pages/zonamarket/ZonaMarketLayout.jsx';
+import ZonaMarketHome from './pages/zonamarket/ZonaMarketHome.jsx';
+import ZonaMarketAdminLayout from './components/zonamarket/ZonaMarketAdminLayout.jsx';
+import { FinanceBasePathProvider } from './contexts/FinanceBasePathContext.jsx';
 
+function FinanceImportarLegacyRedirect() {
+  const [searchParams] = useSearchParams();
+  const tab = searchParams.get('tab');
+  if (tab === 'loyverse') {
+    return <Navigate to="/admin/finance/loyverse" replace />;
+  }
+  if (tab === 'cuentas') {
+    const sub = searchParams.get('cuentasSub') ?? 'movimientos';
+    return (
+      <Navigate
+        to={`/admin/finance/cuentas?cuentasSub=${sub}`}
+        replace
+      />
+    );
+  }
+  if (tab === 'categorias') {
+    return <Navigate to="/admin/finance/categorias" replace />;
+  }
+  if (tab === 'reglas') {
+    return <Navigate to="/admin/finance/reglas" replace />;
+  }
+  return <Navigate to="/admin/finance/cargar-excel" replace />;
+}
 
 function App() {
   return (
@@ -57,7 +84,7 @@ function App() {
         path="/admin/finance/importar"
         element={
           <AdminLayout>
-            <ImportarDatos />
+            <FinanceImportarLegacyRedirect />
           </AdminLayout>
         }
       />
@@ -71,7 +98,7 @@ function App() {
       />
       <Route
         path="/admin/finance/bank-import"
-        element={<Navigate to="/admin/finance/importar" replace />}
+        element={<Navigate to="/admin/finance/cargar-excel" replace />}
       />
       <Route
         path="/admin/finance/loyverse-import"
@@ -85,7 +112,38 @@ function App() {
           </AdminLayout>
         }
       />
+      <Route
+        path="/admin/finance/:section"
+        element={
+          <AdminLayout>
+            <FinanceBankHub />
+          </AdminLayout>
+        }
+      />
       <Route path="/admin/products/import" element={  <AdminLayout> <AdminImportWizard />  </AdminLayout> }/>
+
+      <Route path="/zonamarket" element={<ZonaMarketLayout />}>
+        <Route index element={<ZonaMarketHome />} />
+      </Route>
+
+      <Route
+        path="/zonamarket/admin"
+        element={
+          <FinanceBasePathProvider basePath="/zonamarket/admin/finance">
+            <ZonaMarketAdminLayout />
+          </FinanceBasePathProvider>
+        }
+      >
+        <Route
+          index
+          element={
+            <Navigate to="/zonamarket/admin/finance/dashboard" replace />
+          }
+        />
+        <Route path="finance/dashboard" element={<FinanceDashboard />} />
+        <Route path="finance/loyverse" element={<LoyverseImport />} />
+        <Route path="finance/:section" element={<FinanceBankHub />} />
+      </Route>
     </Routes>
   );
 }
