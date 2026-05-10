@@ -1,3 +1,11 @@
+# Vite + React Router SPA (Hostinger / Apache / LiteSpeed)
+# Rutas como /zonamarket: servir index.html (raiz del sitio = public_html).
+
+<IfModule mod_mime.c>
+  AddType application/javascript js mjs
+  AddType text/css css
+</IfModule>
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
@@ -6,3 +14,9 @@
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule . /index.html [L]
 </IfModule>
+
+<IfModule mod_alias.c>
+  ErrorDocument 404 /index.html
+</IfModule>
+
+Options -Indexes
