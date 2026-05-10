@@ -1,0 +1,11 @@
+.env
+.env.*
+*.env
+
+/credentials/
+
+/generated/prisma
+
+# Datos generados / backups grandes (evitar GitHub >50MB y ruido en el repo)
+/uploads/
+/backup/

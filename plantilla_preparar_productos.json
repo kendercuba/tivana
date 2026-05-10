@@ -1,0 +1,77 @@
+[
+  {
+    "external_id": "123456789",
+    "title": {
+      "es": "T\u00edtulo del producto en espa\u00f1ol"
+    },
+    "description": {
+      "es": "Descripci\u00f3n completa del producto en espa\u00f1ol"
+    },
+    "price": 19.99,
+    "images": [
+      "https://example.com/image1.jpg",
+      "https://example.com/image2.jpg"
+    ],
+    "sizes": [
+      "S",
+      "M",
+      "L"
+    ],
+    "origin": "Shein",
+    "category": "Ropa",
+    "subcategory": "Ropa de Hombre",
+    "subsubcategory": "Camisetas",
+    "gender": "male",
+    "brand": null
+  },
+  {
+    "external_id": "123456789",
+    "title": {
+      "es": "T\u00edtulo del producto en espa\u00f1ol"
+    },
+    "description": {
+      "es": "Descripci\u00f3n completa del producto en espa\u00f1ol"
+    },
+    "price": 19.99,
+    "images": [
+      "https://example.com/image1.jpg",
+      "https://example.com/image2.jpg"
+    ],
+    "sizes": [
+      "S",
+      "M",
+      "L"
+    ],
+    "origin": "Shein",
+    "category": "Ropa",
+    "subcategory": "Ropa de Hombre",
+    "subsubcategory": "Camisetas",
+    "gender": "male",
+    "brand": null
+  },
+  {
+    "external_id": "123456789",
+    "title": {
+      "es": "T\u00edtulo del producto en espa\u00f1ol"
+    },
+    "description": {
+      "es": "Descripci\u00f3n completa del producto en espa\u00f1ol"
+    },
+    "price": 19.99,
+    "images": [
+      "https://example.com/image1.jpg",
+      "https://example.com/image2.jpg"
+    ],
+    "sizes": [
+      "S",
+      "M",
+      "L"
+    ],
+    "origin": "Shein",
+    "category": "Ropa",
+    "subcategory": "Ropa de Hombre",
+    "subsubcategory": "Camisetas",
+    "gender": "male",
+    "brand": null
+  }
+]

@@ -1,0 +1,19 @@
+# Dependencias
+node_modules/
+**/node_modules/
+
+# Build / entorno
+frontend/dist/
+*.local
+.env
+.env.*
+
+# Logs y sistema
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+
+# Backend: datos locales (ya ignorado en backend/.gitignore para rutas relativas)
+backend/uploads/
+backend/backup/
