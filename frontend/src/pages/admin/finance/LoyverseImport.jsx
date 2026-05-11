@@ -84,7 +84,7 @@ export default function LoyverseImport() {
               <div className="w-full max-w-[1600px] flex flex-wrap gap-1.5 py-1.5">
                 {ventasSubBtn("resumen", "Resumen de ventas")}
                 {ventasSubBtn("pago", "Ventas por tipo de pago")}
-                {ventasSubBtn("cargar", "Cargar excel")}
+                {ventasSubBtn("cargar", "Cargar reporte Ventas")}
               </div>
             </div>
           )}

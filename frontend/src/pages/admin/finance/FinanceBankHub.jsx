@@ -94,7 +94,7 @@ export default function FinanceBankHub() {
       )}
 
       {section === "cuentas" && cuentasSub === "movimientos" && (
-        <div className="max-w-none min-w-0 pb-6 pt-2 px-4 sm:px-6 box-border">
+        <div className="max-w-none min-w-0 box-border px-3 pb-6 pt-2 sm:px-5 lg:px-6">
           <BankAccountMovementsMonitor
             categoriesRefreshToken={categoriesRefreshToken}
             accountsRefreshToken={accountsRefreshToken}

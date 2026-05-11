@@ -1,13 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { format, startOfDay, subDays } from "date-fns";
-import BankMovementsTableBlock, {
-  ToolbarVisibleRowsCard,
-  COMFY_TOOLBAR_STAT_CARD,
-  COMFY_TOOLBAR_STAT_LABEL,
-  COMFY_TOOLBAR_STAT_VALUE,
-  comfyToolbarCellPaddingClass,
-  comfyToolbarCellAlignClass,
-} from "./BankMovementsTableBlock.jsx";
+import { Settings2 } from "lucide-react";
+import BankMovementsTableBlock, { RefreshIcon } from "./BankMovementsTableBlock.jsx";
 import DateRangeFilter from "./DateRangeFilter.jsx";
 import {
   fetchBankAccounts,
@@ -19,13 +13,6 @@ function movementDateKey(m) {
   if (raw == null || raw === "") return "";
   const s = String(raw).slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
-}
-
-function formatBs(value) {
-  return new Intl.NumberFormat("es-VE", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0));
 }
 
 function filterByDateRange(movements, range) {
@@ -54,7 +41,9 @@ export default function BankAccountMovementsMonitor({
   const [monitorLoading, setMonitorLoading] = useState(false);
   const [monitorError, setMonitorError] = useState(null);
   const [monitorRefreshTick, setMonitorRefreshTick] = useState(0);
-  const [externalSummary, setExternalSummary] = useState(null);
+  const [filtersResetTick, setFiltersResetTick] = useState(0);
+  const movementsTableRef = useRef(null);
+  const columnPickerAnchorRef = useRef(null);
 
   const [dateRange, setDateRange] = useState(() => ({
     from: startOfDay(subDays(new Date(), 30)),
@@ -120,20 +109,21 @@ export default function BankAccountMovementsMonitor({
     };
   }, [monitorAccountId, accountsRefreshToken, monitorRefreshTick]);
 
-  useEffect(() => {
-    if (monitorAccountId == null) setExternalSummary(null);
-  }, [monitorAccountId]);
-
-  const handleExternalSummaryChange = useCallback((payload) => {
-    setExternalSummary(payload);
-  }, []);
+  function handleActualizar() {
+    setDateRange({
+      from: startOfDay(subDays(new Date(), 30)),
+      to: startOfDay(new Date()),
+    });
+    setMonitorRefreshTick((n) => n + 1);
+    setFiltersResetTick((n) => n + 1);
+  }
 
   return (
-    <div className="mx-auto w-full max-w-[min(88rem,100%)] min-w-0 space-y-4">
+    <div className="mx-auto w-full max-w-[min(88rem,100%)] min-w-0 space-y-4 px-0 sm:px-1">
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/80 shadow-md shadow-slate-900/10">
-        <div className="p-4">
+        <div className="p-3 sm:p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:gap-x-4 lg:gap-y-3">
-            <div className="min-w-0 flex-1 lg:max-w-md">
+            <div className="min-w-0 w-full flex-1 lg:max-w-md">
               <label className="mb-1 block text-sm font-medium text-slate-800">
                 Cuenta
               </label>
@@ -161,121 +151,56 @@ export default function BankAccountMovementsMonitor({
               </select>
             </div>
 
-            <DateRangeFilter value={dateRange} onChange={setDateRange} />
+            <div className="w-full min-w-0 lg:flex-1 lg:max-w-md">
+              <DateRangeFilter value={dateRange} onChange={setDateRange} />
+            </div>
 
-            <div className="flex items-center lg:pb-0.5">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-stretch sm:gap-2 lg:pb-0.5">
               <button
                 type="button"
                 disabled={monitorAccountId == null || accountsLoading}
-                onClick={() => setMonitorRefreshTick((n) => n + 1)}
-                className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-800 shadow-sm transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                onClick={handleActualizar}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 sm:w-auto"
+                title="Período últimos 30 días, actualizar datos y quitar filtros de tabla"
+                aria-label="Actualizar movimientos y restablecer filtros"
               >
-                Recargar movimientos
+                <RefreshIcon className="h-4 w-4 shrink-0 text-slate-600" />
+                Actualizar
+              </button>
+              <button
+                ref={columnPickerAnchorRef}
+                type="button"
+                disabled={monitorAccountId == null || accountsLoading}
+                onClick={() => movementsTableRef.current?.toggleColumnPicker?.()}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 sm:w-auto"
+                aria-label="Elegir columnas visibles"
+                aria-haspopup="menu"
+              >
+                <Settings2 className="h-4 w-4 shrink-0 text-slate-600" aria-hidden />
+                Columnas
               </button>
             </div>
           </div>
         </div>
-
-        {externalSummary &&
-          monitorAccountId != null &&
-          externalSummary.fractions?.length > 0 && (
-            <div className="border-t border-slate-200 bg-white">
-              <div className="overflow-x-auto w-full min-w-0">
-                <div
-                  className="grid w-full min-w-0 items-end gap-x-0 gap-y-1 pb-3 pt-2"
-                  style={{
-                    gridTemplateColumns: externalSummary.fractions
-                      .map((f) => `${f.pct}fr`)
-                      .join(" "),
-                  }}
-                >
-                  {externalSummary.fractions.map(({ id }) => (
-                    <div
-                      key={id}
-                      className={`min-w-0 flex flex-col justify-end gap-1.5 ${comfyToolbarCellPaddingClass(id)} ${comfyToolbarCellAlignClass(id)}`}
-                    >
-                      {id === "movement_date" &&
-                        !externalSummary.showVisibleOnReference && (
-                          <ToolbarVisibleRowsCard
-                            count={externalSummary.visibleRows}
-                          />
-                        )}
-                      {id === "reference" &&
-                        externalSummary.showVisibleOnReference && (
-                          <ToolbarVisibleRowsCard
-                            count={externalSummary.visibleRows}
-                          />
-                        )}
-                      {id === "debit_bs" && (
-                        <div
-                          className={`${COMFY_TOOLBAR_STAT_CARD} border-red-100 bg-gradient-to-br from-red-50/95 to-white ring-1 ring-red-900/5`}
-                        >
-                          <p
-                            className={`${COMFY_TOOLBAR_STAT_LABEL} text-right text-red-800/90`}
-                          >
-                            Total debe
-                          </p>
-                          <p
-                            className={`${COMFY_TOOLBAR_STAT_VALUE} text-red-900`}
-                          >
-                            Bs {formatBs(externalSummary.totals.debit)}
-                          </p>
-                        </div>
-                      )}
-                      {id === "credit_bs" && (
-                        <div
-                          className={`${COMFY_TOOLBAR_STAT_CARD} border-emerald-100 bg-gradient-to-br from-emerald-50/95 to-white ring-1 ring-emerald-900/5`}
-                        >
-                          <p
-                            className={`${COMFY_TOOLBAR_STAT_LABEL} text-right text-emerald-800/90`}
-                          >
-                            Total haber
-                          </p>
-                          <p
-                            className={`${COMFY_TOOLBAR_STAT_VALUE} text-emerald-900`}
-                          >
-                            Bs {formatBs(externalSummary.totals.credit)}
-                          </p>
-                        </div>
-                      )}
-                      {id === "balance_bs" && (
-                        <div
-                          className={`${COMFY_TOOLBAR_STAT_CARD} border-indigo-100 bg-gradient-to-br from-indigo-50/80 to-white ring-1 ring-indigo-900/5`}
-                          title="Saldo según el último movimiento en orden de fecha (no es la suma de la columna)."
-                        >
-                          <p
-                            className={`${COMFY_TOOLBAR_STAT_LABEL} text-right text-indigo-800/85`}
-                          >
-                            Saldo final
-                          </p>
-                          <p
-                            className={`${COMFY_TOOLBAR_STAT_VALUE} text-slate-900`}
-                          >
-                            Bs {formatBs(externalSummary.totals.balance)}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
       </div>
 
       <BankMovementsTableBlock
+        ref={movementsTableRef}
         movements={filteredMovements}
         loading={monitorLoading}
         error={monitorError}
         resetKey={monitorAccountId != null ? String(monitorAccountId) : ""}
         categoriesRefreshToken={categoriesRefreshToken}
-        maxHeightClass="max-h-[calc(100dvh-13rem)]"
+        maxHeightClass="max-h-[calc(100dvh-10.5rem)] sm:max-h-[calc(100dvh-12rem)] lg:max-h-[calc(100dvh-13rem)]"
         hideTitleBar
         appearance="comfortable"
         columnVisibilityStorageKey="tivana-admin.bank-movements.columns.v1"
         hideInlineSummaryTotals={monitorAccountId != null}
-        externalSummaryStrip={monitorAccountId != null}
-        onExternalSummaryChange={handleExternalSummaryChange}
+        externalSummaryStrip={false}
+        hideComfortableStatCards={monitorAccountId != null}
+        resetFiltersKey={filtersResetTick}
+        suppressTopToolbar
+        columnPickerAnchorRef={columnPickerAnchorRef}
         onMovementUpdated={(updated) => {
           if (!updated?.id) return;
           setMonitorMovements((prev) =>

@@ -77,7 +77,7 @@ export default function FinanceDashboard() {
                 Totales a partir de los movimientos ya guardados. Para importar
                 Excel y ver cargas, usa{" "}
                 <strong className="font-medium text-zm-sidebar">
-                  Finanzas → Cuentas bancarias → Subir excel
+                  Cuentas bancarias → Cargar estado de cuenta
                 </strong>{" "}
                 en el menú.
               </p>
@@ -103,7 +103,9 @@ export default function FinanceDashboard() {
               : "text-sm text-blue-600 hover:underline"
           }
         >
-          Ir a subir excel →
+          {isZonaMarket
+            ? "Ir a cargar estado de cuenta →"
+            : "Ir a subir excel →"}
         </Link>
       </div>
 

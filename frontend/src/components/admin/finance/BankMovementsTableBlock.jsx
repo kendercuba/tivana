@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Settings2 } from "lucide-react";
 import {
   fetchBankMovementCategories,
@@ -216,13 +225,34 @@ const COMFY_COL_WEIGHT = {
   transaction_code: 0.75,
   transaction_type: 0.85,
   operation_type: 0.95,
-  description: 2.45,
+  /** Más compacta en pantallas anchas (el tope real lo da maxWidth en col/celdas). */
+  description: 1.55,
   reference: 1.15,
   debit_bs: 1.35,
   credit_bs: 1.35,
   balance_bs: 1.35,
   category: 1.05,
 };
+
+/**
+ * Anchos mínimos por columna (vista cómoda) para evitar solapamiento en móvil/tablet:
+ * la tabla usa `table-auto` + scroll horizontal cuando el viewport es más estrecho.
+ */
+const COMFY_COL_MIN_PX = {
+  movement_date: 100,
+  transaction_code: 88,
+  transaction_type: 108,
+  operation_type: 124,
+  description: 240,
+  reference: 112,
+  debit_bs: 108,
+  credit_bs: 108,
+  balance_bs: 108,
+  category: 152,
+};
+
+/** Tope de ancho para «Descripción» en vista cómoda (compacto en desktop, fluido en móvil). */
+const COMFY_DESC_MAX = "min(26rem, calc(100vw - 2rem))";
 
 /** Misma idea que el padding horizontal de las celdas en vista cómoda (tbody). */
 function comfyToolbarCellPaddingClass(columnId) {
@@ -310,36 +340,47 @@ function persistColumnVisibility(storageKey, vis) {
  * Tabla de movimientos BNC (filtros en cascada, totales, categoría por fila).
  * Se usa en «lote seleccionado» y en monitor por cuenta.
  */
-export default function BankMovementsTableBlock({
-  movements,
-  loading,
-  error,
-  resetKey,
-  categoriesRefreshToken = 0,
-  onMovementUpdated,
-  title,
-  hintNoContext,
-  emptyLoadedMessage,
-  maxHeightClass = "max-h-[min(520px,52vh)]",
-  /** Oculta título + franja meta («496 visibles…»); útil en «Movimientos por cuenta». */
-  hideTitleBar = false,
-  /** Tipografía y espaciado más claros (vista monitor por cuenta). */
-  appearance = "default",
-  /**
-   * Si se define, se muestra el selector de columnas y se guarda la config en localStorage.
-   * Vista importar por lote: omitir para ver siempre todas las columnas.
-   */
-  columnVisibilityStorageKey = null,
-  /** Oculta la franja de totales (Σ, debe/haber/saldo) dentro de la tabla; en vista cómoda van en la barra superior alineada a columnas. */
-  hideInlineSummaryTotals = false,
-  /**
-   * Si es true, no se dibuja la rejilla de totales encima de la tabla; el padre puede mostrarla
-   * con la misma geometría vía `onExternalSummaryChange`.
-   */
-  externalSummaryStrip = false,
-  /** Recibe layout de columnas + totales para alinear una franja fuera de la tabla (p. ej. monitor por cuenta). */
-  onExternalSummaryChange,
-}) {
+const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
+  {
+    movements,
+    loading,
+    error,
+    resetKey,
+    categoriesRefreshToken = 0,
+    onMovementUpdated,
+    title,
+    hintNoContext,
+    emptyLoadedMessage,
+    maxHeightClass = "max-h-[min(520px,52vh)]",
+    /** Oculta título + franja meta («496 visibles…»); útil en «Movimientos por cuenta». */
+    hideTitleBar = false,
+    /** Tipografía y espaciado más claros (vista monitor por cuenta). */
+    appearance = "default",
+    /**
+     * Si se define, se muestra el selector de columnas y se guarda la config en localStorage.
+     * Vista importar por lote: omitir para ver siempre todas las columnas.
+     */
+    columnVisibilityStorageKey = null,
+    /** Oculta la franja de totales (Σ, debe/haber/saldo) dentro de la tabla; en vista cómoda van en la barra superior alineada a columnas. */
+    hideInlineSummaryTotals = false,
+    /**
+     * Si es true, no se dibuja la rejilla de totales encima de la tabla; el padre puede mostrarla
+     * con la misma geometría vía `onExternalSummaryChange`.
+     */
+    externalSummaryStrip = false,
+    /** Recibe layout de columnas + totales para alinear una franja fuera de la tabla (p. ej. monitor por cuenta). */
+    onExternalSummaryChange,
+    /** En vista cómoda sin franja externa de totales: muestra la barra Recargar/Columnas encima de la tabla (sin rejilla de tarjetas). */
+    hideComfortableStatCards = false,
+    /** Al incrementarse, resetea filtros de columna/categoría como «Recargar» dentro de la tabla. */
+    resetFiltersKey = 0,
+    /** Oculta la barra Recargar/Columnas encima de la tabla (p. ej. Columnas en el padre). */
+    suppressTopToolbar = false,
+    /** Ref al botón «Columnas» en el padre; el menú se posiciona con `position:fixed`. */
+    columnPickerAnchorRef = null,
+  },
+  ref
+) {
   const comfy = appearance === "comfortable";
   const sortBtnClass =
     "inline-flex items-center gap-1 font-semibold hover:text-blue-700 " +
@@ -356,7 +397,23 @@ export default function BankMovementsTableBlock({
   const [lotColFilterTxnType, setLotColFilterTxnType] = useState("");
   const [lotColFilterOpType, setLotColFilterOpType] = useState("");
   const [colPickerOpen, setColPickerOpen] = useState(false);
+  const [colPickerFixedStyle, setColPickerFixedStyle] = useState(null);
   const colPickerRef = useRef(null);
+  const colPickerMenuRef = useRef(null);
+  /** Altura real de la 1.ª fila del thead (sticky) para alinear la fila de filtros sin rendija. */
+  const headerSortRowRef = useRef(null);
+  const [filterRowStickyTopPx, setFilterRowStickyTopPx] = useState(40);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      toggleColumnPicker: () => {
+        if (!columnVisibilityStorageKey) return;
+        setColPickerOpen((o) => !o);
+      },
+    }),
+    [columnVisibilityStorageKey]
+  );
 
   const [colVis, setColVis] = useState(() =>
     columnVisibilityStorageKey
@@ -369,19 +426,42 @@ export default function BankMovementsTableBlock({
     persistColumnVisibility(columnVisibilityStorageKey, colVis);
   }, [columnVisibilityStorageKey, colVis]);
 
+  useLayoutEffect(() => {
+    if (!colPickerOpen || !suppressTopToolbar || !columnPickerAnchorRef) {
+      setColPickerFixedStyle(null);
+      return;
+    }
+    function place() {
+      const el = columnPickerAnchorRef.current;
+      if (!el || typeof window === "undefined") return;
+      const r = el.getBoundingClientRect();
+      const w = 240;
+      setColPickerFixedStyle({
+        top: r.bottom + 6,
+        left: Math.max(8, Math.min(r.left, window.innerWidth - w - 8)),
+      });
+    }
+    place();
+    document.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      document.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [colPickerOpen, suppressTopToolbar, columnPickerAnchorRef]);
+
   useEffect(() => {
     function handleDown(e) {
-      if (
-        colPickerOpen &&
-        colPickerRef.current &&
-        !colPickerRef.current.contains(e.target)
-      ) {
-        setColPickerOpen(false);
-      }
+      if (!colPickerOpen) return;
+      const t = e.target;
+      if (colPickerRef.current?.contains(t)) return;
+      if (columnPickerAnchorRef?.current?.contains(t)) return;
+      if (colPickerMenuRef.current?.contains(t)) return;
+      setColPickerOpen(false);
     }
     document.addEventListener("mousedown", handleDown);
     return () => document.removeEventListener("mousedown", handleDown);
-  }, [colPickerOpen]);
+  }, [colPickerOpen, columnPickerAnchorRef]);
 
   function visibleCol(id) {
     return colVis[id] !== false;
@@ -598,6 +678,19 @@ export default function BankMovementsTableBlock({
     return list;
   }, [movements, lotFilterCtx, sortColumn, sortDir]);
 
+  useLayoutEffect(() => {
+    const row = headerSortRowRef.current;
+    if (!row) return;
+    function measure() {
+      const h = row.getBoundingClientRect().height;
+      if (h > 0) setFilterRowStickyTopPx(Math.ceil(h));
+    }
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [colVis, comfy, displayedMovements.length, movements.length]);
+
   const visibleTotals = useMemo(() => {
     let debit = 0;
     let credit = 0;
@@ -615,6 +708,27 @@ export default function BankMovementsTableBlock({
     const balance = Number(last.balance_bs || 0);
     return { debit, credit, balance };
   }, [displayedMovements]);
+
+  const showOuterToolbarRow = useMemo(
+    () =>
+      !suppressTopToolbar &&
+      !(
+        hideInlineSummaryTotals &&
+        comfy &&
+        comfyColFractions &&
+        comfyColFractions.length > 0 &&
+        !externalSummaryStrip &&
+        !hideComfortableStatCards
+      ),
+    [
+      suppressTopToolbar,
+      hideInlineSummaryTotals,
+      comfy,
+      comfyColFractions,
+      externalSummaryStrip,
+      hideComfortableStatCards,
+    ]
+  );
 
   useEffect(() => {
     if (typeof onExternalSummaryChange !== "function") return;
@@ -672,14 +786,19 @@ export default function BankMovementsTableBlock({
   }
 
   /** Vuelve filtros de columna, categoría y búsqueda a «todas» / vacío (no cambia el orden). */
-  function resetLotFilters() {
+  const resetLotFilters = useCallback(() => {
     setCategoryFilter("");
     setDescSearch("");
     setLotColFilterDate("");
     setLotColFilterCode("");
     setLotColFilterTxnType("");
     setLotColFilterOpType("");
-  }
+  }, []);
+
+  useEffect(() => {
+    if (resetFiltersKey <= 0) return;
+    resetLotFilters();
+  }, [resetFiltersKey, resetLotFilters]);
 
   async function handleMovementCategoryChange(movement, nextCategory) {
     if (nextCategory === movement.category) return;
@@ -705,7 +824,7 @@ export default function BankMovementsTableBlock({
 
   return (
     <section
-      className={`bg-white border overflow-hidden ${
+      className={`bg-white border min-w-0 ${
         comfy
           ? "rounded-2xl border-slate-200 shadow-md shadow-slate-900/5"
           : hideTitleBar
@@ -792,18 +911,12 @@ export default function BankMovementsTableBlock({
         movements.length > 0 &&
         displayedMovements.length > 0 && (
           <>
-            {!(
-              hideInlineSummaryTotals &&
-              comfy &&
-              comfyColFractions &&
-              comfyColFractions.length > 0 &&
-              !externalSummaryStrip
-            ) && (
-              <div className="flex flex-wrap items-center justify-between gap-2 px-2 pb-2 sm:px-3">
+            {showOuterToolbarRow && (
+              <div className="flex flex-col gap-2 px-2 pb-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-3">
                 <button
                   type="button"
                   onClick={resetLotFilters}
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                  className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 sm:w-auto sm:justify-start"
                   title="Quitar todos los filtros y la búsqueda en descripción"
                   aria-label="Recargar filtros"
                 >
@@ -811,11 +924,14 @@ export default function BankMovementsTableBlock({
                   Recargar
                 </button>
                 {columnVisibilityStorageKey && (
-                  <div className="relative ml-auto shrink-0" ref={colPickerRef}>
+                  <div
+                    className="relative w-full shrink-0 sm:ml-auto sm:w-auto"
+                    ref={colPickerRef}
+                  >
                     <button
                       type="button"
                       onClick={() => setColPickerOpen((o) => !o)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 sm:w-auto sm:justify-start"
                       aria-expanded={colPickerOpen}
                     >
                       <Settings2 className="h-4 w-4 text-slate-600" aria-hidden />
@@ -823,6 +939,7 @@ export default function BankMovementsTableBlock({
                     </button>
                     {colPickerOpen && (
                       <div
+                        ref={colPickerMenuRef}
                         className="absolute right-0 top-full z-40 mt-1.5 w-60 rounded-xl border border-slate-200 bg-white py-2 shadow-xl shadow-slate-900/15"
                         role="menu"
                       >
@@ -857,15 +974,20 @@ export default function BankMovementsTableBlock({
               </div>
             )}
 
+            {/*
+              Un solo contenedor con overflow-auto: si el scroll horizontal va en un hijo,
+              position:sticky del thead suele fallar. Así encabezado + filtros quedan fijos
+              al hacer scroll dentro de la tabla; el scroll de página mueve todo el bloque.
+            */}
             <div
-              className={`${maxHeightClass} overflow-y-auto w-full min-w-0`}
+              className={`${maxHeightClass} w-full min-w-0 overflow-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]`}
             >
-              <div className="overflow-x-auto w-full min-w-0">
                 {hideInlineSummaryTotals &&
                   comfy &&
                   comfyColFractions &&
                   comfyColFractions.length > 0 &&
-                  !externalSummaryStrip && (
+                  !externalSummaryStrip &&
+                  !hideComfortableStatCards && (
                     <div className="relative min-w-0 border-b border-slate-100 bg-white">
                       <div
                         className="grid w-full min-w-0 items-end gap-x-0 pb-2 pt-1"
@@ -971,6 +1093,7 @@ export default function BankMovementsTableBlock({
                                   </button>
                                   {colPickerOpen && (
                                     <div
+                                      ref={colPickerMenuRef}
                                       className="absolute right-0 top-full z-40 mt-1.5 w-60 rounded-xl border border-slate-200 bg-white py-2 shadow-xl shadow-slate-900/15"
                                       role="menu"
                                     >
@@ -1027,6 +1150,7 @@ export default function BankMovementsTableBlock({
                             </button>
                             {colPickerOpen && (
                               <div
+                                ref={colPickerMenuRef}
                                 className="absolute right-0 top-full z-40 mt-1.5 w-60 rounded-xl border border-slate-200 bg-white py-2 shadow-xl shadow-slate-900/15"
                                 role="menu"
                               >
@@ -1064,19 +1188,30 @@ export default function BankMovementsTableBlock({
                   )}
                 <table
                 className={`${
-                  comfy ? "w-full table-fixed text-[15px] leading-snug" : "min-w-full text-sm"
+                  comfy
+                    ? "min-w-full w-max table-auto border-collapse text-[15px] leading-snug"
+                    : "min-w-full text-sm"
                 }`}
               >
                 {comfy && comfyColFractions && comfyColFractions.length > 0 && (
                   <colgroup>
-                    {comfyColFractions.map(({ id, pct }) => (
-                      <col key={id} style={{ width: `${pct.toFixed(4)}%` }} />
+                    {comfyColFractions.map(({ id }) => (
+                      <col
+                        key={id}
+                        style={{
+                          minWidth: COMFY_COL_MIN_PX[id] ?? 96,
+                          ...(id === "description"
+                            ? { maxWidth: COMFY_DESC_MAX }
+                            : {}),
+                        }}
+                      />
                     ))}
                   </colgroup>
                 )}
                 <thead>
                   <tr
-                    className={`sticky top-0 z-[35] shadow-[0_1px_0_0_rgb(148_163_184_/_0.4)] ${
+                    ref={headerSortRowRef}
+                    className={`sticky top-0 z-[40] shadow-[0_1px_0_0_rgb(148_163_184_/_0.4)] ${
                       comfy
                         ? "bg-slate-100 [&_th]:bg-slate-100"
                         : "bg-gray-100 [&_th]:bg-gray-100"
@@ -1151,7 +1286,10 @@ export default function BankMovementsTableBlock({
                       </th>
                     )}
                     {visibleCol("description") && (
-                      <th className="text-left px-2 py-1.5 min-w-0">
+                      <th
+                        className="text-left px-2 py-1.5 min-w-0"
+                        style={comfy ? { maxWidth: COMFY_DESC_MAX } : undefined}
+                      >
                         <button
                           type="button"
                           onClick={() => toggleSort("description")}
@@ -1235,11 +1373,12 @@ export default function BankMovementsTableBlock({
                     )}
                   </tr>
                   <tr
-                    className={`sticky z-[34] border-t text-[11px] shadow-[0_1px_0_0_rgb(148_163_184_/_0.3)] ${
+                    className={`sticky z-[39] border-t text-[11px] shadow-[0_1px_0_0_rgb(148_163_184_/_0.3)] ${
                       comfy
-                        ? "top-[2.875rem] bg-slate-50/95 border-slate-200 [&_th]:bg-slate-50/95"
-                        : "top-10 bg-gray-50 border-gray-200 [&_th]:bg-gray-50"
+                        ? "border-slate-200 bg-slate-50 [&_th]:bg-slate-50"
+                        : "bg-gray-50 border-gray-200 [&_th]:bg-gray-50"
                     }`}
+                    style={{ top: filterRowStickyTopPx }}
                   >
                     {visibleCol("movement_date") && (
                       <th className="text-left align-top px-2 py-1 font-normal min-w-[140px]">
@@ -1247,7 +1386,9 @@ export default function BankMovementsTableBlock({
                         <select
                           value={lotColFilterDate}
                           onChange={(e) => setLotColFilterDate(e.target.value)}
-                          className="w-full max-w-[min(180px,28vw)] border border-gray-300 rounded px-1 py-0.5 bg-white"
+                          className={`w-full border border-gray-300 rounded px-1 py-0.5 bg-white ${
+                            comfy ? "text-[11px]" : "max-w-[min(180px,28vw)]"
+                          }`}
                           title="Filtrar por fecha del movimiento"
                         >
                           <option value="">Todas las fechas</option>
@@ -1277,7 +1418,9 @@ export default function BankMovementsTableBlock({
                         <select
                           value={lotColFilterCode}
                           onChange={(e) => setLotColFilterCode(e.target.value)}
-                          className="w-full max-w-[min(120px,22vw)] border border-gray-300 rounded px-1 py-0.5 bg-white"
+                          className={`w-full border border-gray-300 rounded px-1 py-0.5 bg-white ${
+                            comfy ? "text-[11px]" : "max-w-[min(120px,22vw)]"
+                          }`}
                           title="Filtrar por código de transacción"
                         >
                           <option value="">Todos los códigos</option>
@@ -1297,7 +1440,9 @@ export default function BankMovementsTableBlock({
                         <select
                           value={lotColFilterTxnType}
                           onChange={(e) => setLotColFilterTxnType(e.target.value)}
-                          className="w-full max-w-[min(160px,26vw)] border border-gray-300 rounded px-1 py-0.5 bg-white"
+                          className={`w-full border border-gray-300 rounded px-1 py-0.5 bg-white ${
+                            comfy ? "text-[11px]" : "max-w-[min(160px,26vw)]"
+                          }`}
                           title="Filtrar por tipo trans."
                         >
                           <option value="">Todos</option>
@@ -1317,7 +1462,9 @@ export default function BankMovementsTableBlock({
                         <select
                           value={lotColFilterOpType}
                           onChange={(e) => setLotColFilterOpType(e.target.value)}
-                          className="w-full max-w-[min(220px,36vw)] border border-gray-300 rounded px-1 py-0.5 bg-white"
+                          className={`w-full border border-gray-300 rounded px-1 py-0.5 bg-white ${
+                            comfy ? "text-[11px]" : "max-w-[min(220px,36vw)]"
+                          }`}
                           title="Filtrar por tipo operación"
                         >
                           <option value="">Todos</option>
@@ -1330,7 +1477,10 @@ export default function BankMovementsTableBlock({
                       </th>
                     )}
                     {visibleCol("description") && (
-                      <th className="text-left align-top px-2 py-1 font-normal min-w-[120px]">
+                      <th
+                        className="text-left align-top px-2 py-1 font-normal min-w-[120px]"
+                        style={comfy ? { maxWidth: COMFY_DESC_MAX } : undefined}
+                      >
                         <span className="sr-only">
                           Buscar en descripción, referencia y códigos
                         </span>
@@ -1339,7 +1489,9 @@ export default function BankMovementsTableBlock({
                           value={descSearch}
                           onChange={(e) => setDescSearch(e.target.value)}
                           placeholder="Buscar texto…"
-                          className="w-full min-w-[7rem] border border-gray-300 rounded px-1 py-0.5 text-[11px] bg-white"
+                          className={`w-full max-w-full border border-gray-300 rounded px-1 py-0.5 text-[11px] bg-white ${
+                            comfy ? "min-w-0" : "min-w-[7rem]"
+                          }`}
                           title="Filtra por descripción, referencia o códigos"
                           autoComplete="off"
                         />
@@ -1425,10 +1577,8 @@ export default function BankMovementsTableBlock({
                         <select
                           value={categoryFilter}
                           onChange={(e) => setCategoryFilter(e.target.value)}
-                          className={`w-full border border-gray-300 rounded px-1 py-0.5 bg-white ${
-                            comfy
-                              ? "max-w-[120px] text-[11px]"
-                              : "max-w-[min(220px,40vw)] text-[11px]"
+                          className={`w-full border border-gray-300 rounded px-1 py-0.5 bg-white text-[11px] ${
+                            comfy ? "min-w-[9rem] max-w-full" : "max-w-[min(220px,40vw)]"
                           }`}
                           title="Filtrar por categoría"
                         >
@@ -1506,6 +1656,7 @@ export default function BankMovementsTableBlock({
                                 ? "px-2 py-2 text-slate-700"
                                 : "max-w-lg px-3 py-2"
                             }`}
+                            style={comfy ? { maxWidth: COMFY_DESC_MAX } : undefined}
                             title={String(m.description ?? "")}
                           >
                             <span
@@ -1598,7 +1749,6 @@ export default function BankMovementsTableBlock({
                   })}
                 </tbody>
               </table>
-              </div>
             </div>
           </>
         )}
@@ -1608,11 +1758,56 @@ export default function BankMovementsTableBlock({
         movements.length === 0 &&
         emptyLoadedMessage}
 
+      {colPickerOpen &&
+        suppressTopToolbar &&
+        columnVisibilityStorageKey &&
+        colPickerFixedStyle && (
+          <div
+            ref={colPickerMenuRef}
+            className="fixed z-[60] w-60 rounded-xl border border-slate-200 bg-white py-2 shadow-xl shadow-slate-900/15"
+            style={{
+              top: colPickerFixedStyle.top,
+              left: colPickerFixedStyle.left,
+            }}
+            role="menu"
+            aria-label="Mostrar columnas"
+          >
+            <p className="border-b border-slate-100 px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Mostrar columnas
+            </p>
+            <ul className="max-h-[min(70vh,22rem)] overflow-y-auto py-1">
+              {MOV_COLUMN_ORDER.map((id) => (
+                <li key={id}>
+                  <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-slate-800 hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      checked={colVis[id] !== false}
+                      disabled={id === "movement_date"}
+                      onChange={() => toggleColumnVisibility(id)}
+                    />
+                    <span>{MOV_COLUMN_LABELS[id]}</span>
+                    {id === "movement_date" && (
+                      <span className="ml-auto text-[10px] text-slate-400">
+                        siempre
+                      </span>
+                    )}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
     </section>
   );
-}
+});
+
+BankMovementsTableBlock.displayName = "BankMovementsTableBlock";
+
+export default BankMovementsTableBlock;
 
 export {
+  RefreshIcon,
   ToolbarVisibleRowsCard,
   COMFY_TOOLBAR_STAT_CARD,
   COMFY_TOOLBAR_STAT_LABEL,

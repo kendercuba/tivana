@@ -318,6 +318,31 @@ function inferPeriodEndDateFromFilename(name) {
   return null;
 }
 
+/** Columnas con encoding roto (ej. transacciÃ³nes) o variantes Loyverse. */
+function pickRefundTransactionCount(raw) {
+  let v = pickInt(raw, [
+    "reembolso de transacciones",
+    "reembolso de transacci",
+    "reembolsos de transacciones",
+    "refund transactions",
+    "refund transaction",
+  ]);
+  if (v != null) return v;
+  for (const [col, val] of Object.entries(raw)) {
+    const c = normalizeHeader(col);
+    if (
+      c.includes("reembolso") &&
+      c.includes("transacc") &&
+      !c.includes("importe") &&
+      !c.includes("monto")
+    ) {
+      const n = parseLocalizedNumber(String(val ?? ""));
+      if (n != null) return Math.round(n);
+    }
+  }
+  return null;
+}
+
 function mapPaymentRow(raw, sheetName, sourceFileName = "") {
   let businessDate = pickDate(raw, ["date", "fecha", "día", "dia"]);
   if (!businessDate) {
@@ -335,6 +360,7 @@ function mapPaymentRow(raw, sheetName, sourceFileName = "") {
   ]);
 
   const grossPayments = pickNumber(raw, [
+    "importe del pago",
     "monto de pagos",
     "payment amount",
     "monto de pago",
@@ -374,11 +400,23 @@ function mapPaymentRow(raw, sheetName, sourceFileName = "") {
 
   const refundAmt = pickNumber(raw, [
     "importe del reembol",
+    "importe del ree",
     "refund amount",
     "importe del reembolso",
     "importe del reembolsos",
     "reembolsos",
   ]);
+
+  const refundTxnCount = pickRefundTransactionCount(raw);
+
+  const enrichedRaw = { ...raw };
+  if (refundAmt != null) {
+    enrichedRaw._loyverse_refund_amount = refundAmt;
+    enrichedRaw._refund_amount = refundAmt;
+  }
+  if (refundTxnCount != null) {
+    enrichedRaw._loyverse_refund_txn_count = refundTxnCount;
+  }
 
   return {
     fact_type: "payment_breakdown",
@@ -392,10 +430,7 @@ function mapPaymentRow(raw, sheetName, sourceFileName = "") {
     gross_profit: null,
     transactions_count: txnPayments,
     sheet_name: sheetName,
-    raw_row:
-      refundAmt != null
-        ? { ...raw, _refund_amount: refundAmt }
-        : raw,
+    raw_row: enrichedRaw,
   };
 }
 

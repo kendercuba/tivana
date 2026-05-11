@@ -204,7 +204,7 @@ export default function BankImport({
                 : "text-xl font-bold text-gray-800"
             }
           >
-            Subir excel
+            {isZonaMarket ? "Cargar estado de cuenta" : "Subir excel"}
           </h1>
         </div>
         <Link
