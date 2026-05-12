@@ -23,7 +23,9 @@ jobs:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
+          # PM2 runs from /var/www/backend (pm2 describe tivana-backend → exec cwd / script path).
+          # Pulls under /root/tivana-backend never updated the process that serves api.tivana.me.
           script: |
-            cd /root/tivana-backend
+            cd /var/www/backend
             git pull origin main
             pm2 restart tivana-backend
