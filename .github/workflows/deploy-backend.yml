@@ -23,21 +23,23 @@ jobs:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
-          # Git lives in /root/tivana-backend (monorepo). PM2 runs /var/www/backend (no .git there).
-          # Pull then sync backend/ → /var/www/backend, refresh deps, restart.
+          # Production code must match monorepo kendercuba/tivana (folder backend/).
+          # The old repo kendercuba/tivana-backend can lag behind → 404 on new routes (e.g. Loyverse).
+          # PM2 runs from /var/www/backend (no .git); we clone/pull tivana then rsync backend/.
           script: |
             set -e
-            cd /root/tivana-backend
-            git pull origin main
-            if [ -d backend ]; then
-              SRC="/root/tivana-backend/backend/"
-            else
-              SRC="/root/tivana-backend/"
+            MONO=/root/tivana-monorepo
+            if [ ! -d "$MONO/.git" ]; then
+              git clone https://github.com/kendercuba/tivana.git "$MONO"
             fi
-            rsync -a "${SRC}" /var/www/backend/ \
+            cd "$MONO"
+            git fetch origin main
+            git reset --hard origin/main
+            rsync -a "${MONO}/backend/" /var/www/backend/ \
               --exclude='.env' \
               --exclude='node_modules' \
-              --exclude='uploads'
+              --exclude='uploads' \
+              --exclude='.git'
             cd /var/www/backend
             if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
             pm2 restart tivana-backend
