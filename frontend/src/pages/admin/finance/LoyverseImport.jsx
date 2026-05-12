@@ -1,9 +1,22 @@
-import { useSearchParams, useLocation } from "react-router-dom";
-import LoyverseVentasCargar from "./LoyverseVentasCargar.jsx";
+import { useCallback, useState } from "react";
+import { Navigate, useSearchParams, useLocation } from "react-router-dom";
 import {
   LoyverseResumenVentas,
   LoyverseVentasPorPago,
 } from "./LoyverseVentasTablas.jsx";
+
+const LOYVERSE_HIGHLIGHT_BATCH_STORAGE_KEY = "zm-loyverse-import-highlight-batch";
+
+function readStoredHighlightBatchId() {
+  try {
+    const raw = sessionStorage.getItem(LOYVERSE_HIGHLIGHT_BATCH_STORAGE_KEY);
+    if (raw == null || raw === "") return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
 
 function mainTabFromSearch(searchParams) {
   return searchParams.get("tab") === "compras" ? "compras" : "ventas";
@@ -11,7 +24,6 @@ function mainTabFromSearch(searchParams) {
 
 function ventasSubFromSearch(searchParams) {
   const s = searchParams.get("ventasSub");
-  if (s === "cargar") return "cargar";
   if (s === "resumen") return "resumen";
   if (s === "pago") return "pago";
   return "resumen";
@@ -23,7 +35,36 @@ export default function LoyverseImport() {
   const mainTab = mainTabFromSearch(searchParams);
   const ventasSub = ventasSubFromSearch(searchParams);
 
+  const [highlightBatchId, setHighlightBatchIdState] = useState(() =>
+    readStoredHighlightBatchId()
+  );
+
+  const setHighlightBatchId = useCallback((next) => {
+    setHighlightBatchIdState(next);
+    try {
+      if (next == null || next === "") {
+        sessionStorage.removeItem(LOYVERSE_HIGHLIGHT_BATCH_STORAGE_KEY);
+      } else {
+        sessionStorage.setItem(
+          LOYVERSE_HIGHLIGHT_BATCH_STORAGE_KEY,
+          String(next)
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const isZonaMarketAdmin = location.pathname.startsWith("/zonamarket/admin");
+
+  if (searchParams.get("ventasSub") === "cargar") {
+    return (
+      <Navigate
+        to={`${location.pathname}?tab=ventas&ventasSub=resumen`}
+        replace
+      />
+    );
+  }
 
   function setMainTab(next) {
     if (next === "compras") {
@@ -84,21 +125,24 @@ export default function LoyverseImport() {
               <div className="w-full max-w-[1600px] flex flex-wrap gap-1.5 py-1.5">
                 {ventasSubBtn("resumen", "Resumen de ventas")}
                 {ventasSubBtn("pago", "Ventas por tipo de pago")}
-                {ventasSubBtn("cargar", "Cargar reporte Ventas")}
               </div>
             </div>
           )}
         </>
       )}
 
-      {mainTab === "ventas" && ventasSub === "cargar" && <LoyverseVentasCargar />}
-
       {mainTab === "ventas" && ventasSub === "resumen" && (
-        <LoyverseResumenVentas />
+        <LoyverseResumenVentas
+          highlightBatchId={highlightBatchId}
+          onHighlightBatchIdChange={setHighlightBatchId}
+        />
       )}
 
       {mainTab === "ventas" && ventasSub === "pago" && (
-        <LoyverseVentasPorPago />
+        <LoyverseVentasPorPago
+          highlightBatchId={highlightBatchId}
+          onHighlightBatchIdChange={setHighlightBatchId}
+        />
       )}
 
       {mainTab === "compras" && (

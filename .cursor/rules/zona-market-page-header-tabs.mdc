@@ -1,0 +1,79 @@
+---
+description: Shell de página admin Zona Market — cabecera verde, viñetas, alineación, tablas e historiales como Loyverse finanzas.
+alwaysApply: true
+---
+
+# Shell de página + viñetas + tablas (Zona Market / admin finanzas)
+
+Para **cualquier página nueva** con cabecera tipo Loyverse y, si aplica, **tablas** u **historiales**, usar los mismos parámetros que **`frontend/src/pages/admin/finance/LoyverseVentasTablas.jsx`** (**Resumen de ventas**, **Ventas por tipo de pago**) y **`LoyverseImportBatchHistory.jsx`**.
+
+## 1. Estructura del encabezado (orden obligatorio)
+
+1. **Raíz de la vista:** `w-full font-zm` (el `max-w-*` va en hijos según sección; ver §3).
+2. **Franja de título (arriba del todo):**  
+   `flex items-center bg-zm-green px-4 sm:px-6 py-3 text-white shadow-sm rounded-b-xl`  
+   - Título: `h1` con `text-sm sm:text-base font-semibold tracking-tight`.  
+   - **Copy en español** (nombre de la página).
+3. **Fila de viñetas (tabs):** debajo del título, contenedor `border-b border-zm-green/20`, dentro `flex flex-wrap gap-1 py-1`; padding horizontal coherente con el cuerpo (`px-4` como mínimo).
+4. **Botones de viñeta** (activo / inactivo):
+   - Base: `px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors`
+   - Activo: `bg-zm-cream/70 border-zm-green/45 text-zm-sidebar shadow-sm`
+   - Inactivo: `bg-transparent border-transparent text-gray-600 hover:text-zm-sidebar hover:bg-zm-cream/40`
+
+No poner el título de página **dentro** de una card blanca si ya existe la franja verde (evita duplicar encabezado).
+
+## 2. Alineación horizontal (contenido pegado al panel lateral)
+
+Dentro del `<main>` del layout admin (padding ya aplicado por el layout):
+
+- En bloques con **`max-w-7xl`**, **`max-w-[1600px]`** u otro tope: **no usar `mx-auto`** para centrar el bloque completo. El contenido debe **arrancar a la izquierda** del área útil (como **Resumen de ventas**).
+- El centrado con `mx-auto` solo si el usuario pide explícitamente una vista centrada.
+
+Referencia: `LoyverseResumenVentas` usa `w-full max-w-7xl` **sin** `mx-auto`.
+
+## 3. Anchos distintos por pestaña (tabla vs historial ancho)
+
+Si la vista principal debe coincidir con **Resumen / tabla** (`max-w-7xl`) pero **otra pestaña** necesita más ancho (p. ej. historial con muchas columnas):
+
+- Mantener **cabecera verde + viñetas** en el ancho estándar (`max-w-7xl`).
+- Envolver **solo el contenido de la pestaña ancha** en otro wrapper (p. ej. `w-full max-w-[1600px] px-4 sm:px-6 pb-8`) **sin `mx-auto`**.
+- El contenido de la pestaña «normal» sigue en `w-full max-w-7xl px-4 …` **sin `mx-auto`**.
+
+Patrón: `LoyverseVentasPorPago` en `LoyverseVentasTablas.jsx`.
+
+## 4. Tablas de datos (misma línea que Loyverse)
+
+Cuando la página incluya **tabla de datos** o **historial en tabla**:
+
+**Contenedor**
+
+- `w-full overflow-x-auto` (y `overflow-y-auto` solo si la tabla tiene altura máxima con scroll interno).
+- Opcional: `[-webkit-overflow-scrolling:touch]` en el scroll horizontal.
+
+**Elemento `<table>`**
+
+- `w-full border-collapse` y tamaños de texto acordes: `text-xs sm:text-sm` o `text-sm sm:text-base` si la vista ya usa tipografía grande en esa tabla.
+- Para evitar columnas aplastadas o texto solapado: dar **`min-w-[960px]`–`min-w-[1120px]`** (o el valor que necesite la vista) en la tabla y dejar que el **scroll horizontal** absorba el exceso en viewports estrechos — **no** depender solo de `table-fixed` + porcentajes muy ajustados si provoca solapamiento (historial: ver `LoyverseImportBatchHistory.jsx`).
+
+**Cabecera `<thead>`**
+
+- Fondo acorde al contexto: p. ej. `bg-zm-cream/80` (ZM) o `bg-gray-100`; si hay scroll vertical en el cuerpo, `sticky top-0 z-10`.
+
+**Celdas con texto largo**
+
+- El **`td`/`th`** con `overflow-hidden` (o `min-w-0` en flex hijos) y el texto con `truncate` / `line-clamp-*` + `title` accesible para el valor completo cuando se trunca.
+
+**Filas especiales**
+
+- Subtotales / destacados: `bg-zm-cream/70`, `text-zm-sidebar` donde aplique.
+- Total final: `bg-zm-green/10`, `border-zm-green/25` (coherente con `zona-market-branding-ui.mdc`).
+
+**Botones de toolbar tipo export**
+
+- `border-zm-green/40`, `text-zm-green`, etc., como en **Ventas por tipo de pago**.
+
+## 5. Responsive
+
+Seguir **`ui-responsive.mdc`**: scroll horizontal en tabla cuando haga falta; no romper el viewport con anchos fijos sin control.
+
+---

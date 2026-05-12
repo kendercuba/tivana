@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format, startOfDay, subDays } from "date-fns";
-import { Settings2 } from "lucide-react";
+import { Settings2, Upload } from "lucide-react";
 import BankMovementsTableBlock, { RefreshIcon } from "./BankMovementsTableBlock.jsx";
 import LoyversePorPagoDateRange from "./LoyversePorPagoDateRange.jsx";
 import {
@@ -8,6 +8,7 @@ import {
   fetchBankMovementsByAccount,
   reclassifyBankMovementsForAccount,
 } from "../../../api/admin/finance/bankApi";
+import useBankImport from "../../../hooks/admin/finance/useBankImport";
 
 function movementDateKey(m) {
   const raw = m.movement_date;
@@ -42,6 +43,9 @@ function filterByYmdRange(movements, rangeStartYmd, rangeEndYmd) {
 export default function BankAccountMovementsMonitor({
   categoriesRefreshToken = 0,
   accountsRefreshToken = 0,
+  onImportSuccess,
+  highlightImportBatchId = null,
+  onHighlightImportBatchIdChange,
 }) {
   const [rows, setRows] = useState([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
@@ -55,9 +59,22 @@ export default function BankAccountMovementsMonitor({
   const [reclassifyLoading, setReclassifyLoading] = useState(false);
   const movementsTableRef = useRef(null);
   const columnPickerAnchorRef = useRef(null);
+  /** When import returns no inserted rows with dates, widen range after movements reload. */
+  const pendingBankImportRangeFallbackRef = useRef(false);
 
   const [rangeStart, setRangeStart] = useState(() => defaultLast30YmdRange().startYmd);
   const [rangeEnd, setRangeEnd] = useState(() => defaultLast30YmdRange().endYmd);
+
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadInputKey, setUploadInputKey] = useState(0);
+  /** Shown when the server skipped every row as duplicate (nothing new to highlight). */
+  const [importDedupeHint, setImportDedupeHint] = useState(null);
+  const {
+    loading: importLoading,
+    error: importError,
+    result: importResult,
+    handleImport,
+  } = useBankImport();
 
   const movementDateBounds = useMemo(() => {
     const keys = monitorMovements
@@ -72,6 +89,23 @@ export default function BankAccountMovementsMonitor({
     () => filterByYmdRange(monitorMovements, rangeStart, rangeEnd),
     [monitorMovements, rangeStart, rangeEnd]
   );
+
+  useEffect(() => {
+    if (!pendingBankImportRangeFallbackRef.current) return;
+    if (monitorLoading) return;
+    const min = movementDateBounds.min;
+    const max = movementDateBounds.max;
+    if (min && max) {
+      setRangeStart(min);
+      setRangeEnd(max);
+    }
+    pendingBankImportRangeFallbackRef.current = false;
+  }, [
+    monitorMovements,
+    monitorLoading,
+    movementDateBounds.min,
+    movementDateBounds.max,
+  ]);
 
   async function loadAccounts() {
     try {
@@ -127,6 +161,94 @@ export default function BankAccountMovementsMonitor({
     };
   }, [monitorAccountId, accountsRefreshToken, monitorRefreshTick]);
 
+  useEffect(() => {
+    if (!importResult?.success || importResult?.data == null) {
+      return;
+    }
+    const data = importResult.data;
+    const inserted = data.movements || [];
+    /** Top-level camelCase from Node; tolerate snake_case if encoding differs. */
+    const highlightBatchRaw =
+      data.importBatchId ??
+      data.import_batch_id ??
+      inserted[0]?.import_batch_id ??
+      inserted[0]?.importBatchId;
+    const highlightBatchNum =
+      highlightBatchRaw != null && highlightBatchRaw !== ""
+        ? Number(highlightBatchRaw)
+        : null;
+
+    const resolvedAccountIdRaw =
+      data.accountResolution?.usedBankAccountId ??
+      inserted[0]?.bank_account_id;
+    const resolvedAccountId =
+      resolvedAccountIdRaw != null && resolvedAccountIdRaw !== ""
+        ? Number(resolvedAccountIdRaw)
+        : null;
+
+    if (resolvedAccountId != null && Number.isFinite(resolvedAccountId)) {
+      setMonitorAccountId(resolvedAccountId);
+    }
+
+    if (Number.isFinite(highlightBatchNum)) {
+      onHighlightImportBatchIdChange?.(highlightBatchNum);
+    } else {
+      onHighlightImportBatchIdChange?.(null);
+    }
+
+    const insertedCount =
+      typeof data.inserted === "number" ? data.inserted : inserted.length;
+    const skippedDup = Number(data.skippedDuplicate ?? 0);
+    if (insertedCount === 0 && skippedDup > 0) {
+      setImportDedupeHint(
+        "No hay movimientos nuevos: todas las filas ya estaban guardadas (deduplicación). Borra ese lote en Historial de cargas y vuelve a importar para poder ver el resaltado en la tabla."
+      );
+    } else {
+      setImportDedupeHint(null);
+    }
+
+    const dateKeys = inserted
+      .map((m) => movementDateKey(m))
+      .filter(Boolean)
+      .sort();
+    if (dateKeys.length > 0) {
+      setRangeStart(dateKeys[0]);
+      setRangeEnd(dateKeys[dateKeys.length - 1]);
+      pendingBankImportRangeFallbackRef.current = false;
+    } else {
+      pendingBankImportRangeFallbackRef.current = true;
+    }
+
+    setUploadFile(null);
+    setUploadInputKey((k) => k + 1);
+    setMonitorRefreshTick((n) => n + 1);
+    onImportSuccess?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per import completion; omit parent callbacks
+  }, [
+    importResult?.success,
+    importResult?.data?.importBatchId,
+    importResult?.data?.import_batch_id,
+  ]);
+
+  function handleToolbarImport(e) {
+    e.preventDefault();
+    if (rows.length === 0) {
+      window.alert(
+        "No hay cuentas bancarias. Crea una en Gestionar cuentas antes de importar."
+      );
+      return;
+    }
+    if (!uploadFile) {
+      window.alert("Selecciona un archivo Excel del banco.");
+      return;
+    }
+    handleImport({
+      file: uploadFile,
+      bankAccountId:
+        monitorAccountId != null ? monitorAccountId : undefined,
+    });
+  }
+
   async function handleActualizar() {
     const { startYmd, endYmd } = defaultLast30YmdRange();
     setRangeStart(startYmd);
@@ -161,6 +283,8 @@ export default function BankAccountMovementsMonitor({
                 onChange={(e) => {
                   const v = e.target.value;
                   setMonitorAccountId(v === "" ? null : Number(v));
+                  onHighlightImportBatchIdChange?.(null);
+                  setImportDedupeHint(null);
                 }}
                 disabled={accountsLoading || rows.length === 0}
                 className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 shadow-sm outline-none transition hover:border-gray-400 focus:border-zm-green focus:ring-2 focus:ring-zm-green/30 disabled:bg-gray-50 disabled:text-gray-400"
@@ -196,6 +320,64 @@ export default function BankAccountMovementsMonitor({
               />
             </div>
 
+            <div className="w-full min-w-0 lg:flex-1 lg:max-w-md">
+              <span className="mb-1 block text-sm font-medium text-zm-sidebar">
+                Importar Excel
+              </span>
+              <form
+                onSubmit={handleToolbarImport}
+                className="flex flex-wrap items-center gap-2 min-w-0"
+              >
+                <label className="cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40">
+                  <Upload
+                    className="h-4 w-4 shrink-0 opacity-90"
+                    aria-hidden
+                    strokeWidth={2.25}
+                  />
+                  <span>Seleccionar archivo</span>
+                  <input
+                    key={uploadInputKey}
+                    type="file"
+                    accept=".xls,.xlsx"
+                    className="sr-only"
+                    aria-label="Seleccionar archivo Excel del estado de cuenta"
+                    onChange={(e) => {
+                      setUploadFile(e.target.files?.[0] ?? null);
+                      setImportDedupeHint(null);
+                    }}
+                  />
+                </label>
+                {uploadFile && (
+                  <>
+                    <span
+                      className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[14rem] font-medium"
+                      title={uploadFile.name}
+                    >
+                      {uploadFile.name}
+                    </span>
+                    <button
+                      type="submit"
+                      disabled={importLoading}
+                      className="shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50"
+                    >
+                      {importLoading ? "Importando…" : "Importar"}
+                    </button>
+                  </>
+                )}
+              </form>
+              {importError && (
+                <p className="mt-1 text-xs text-zm-red">{importError}</p>
+              )}
+              {importDedupeHint && (
+                <p
+                  className="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs leading-snug text-amber-950"
+                  role="status"
+                >
+                  {importDedupeHint}
+                </p>
+              )}
+            </div>
+
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-stretch sm:gap-2 lg:pb-0.5">
               <button
                 type="button"
@@ -229,7 +411,7 @@ export default function BankAccountMovementsMonitor({
           </div>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden min-w-0">
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm min-w-0">
         <BankMovementsTableBlock
         ref={movementsTableRef}
         movements={filteredMovements}
@@ -247,6 +429,7 @@ export default function BankAccountMovementsMonitor({
         resetFiltersKey={filtersResetTick}
         suppressTopToolbar
         columnPickerAnchorRef={columnPickerAnchorRef}
+        highlightImportBatchId={highlightImportBatchId}
         onMovementUpdated={(updated) => {
           if (!updated?.id) return;
           setMonitorMovements((prev) =>

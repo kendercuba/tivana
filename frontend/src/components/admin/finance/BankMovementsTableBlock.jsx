@@ -34,6 +34,21 @@ function RefreshIcon({ className }) {
   );
 }
 
+/** PG uses snake_case; tolerate camelCase if any layer normalizes keys. */
+function movementImportBatchId(m) {
+  if (!m || typeof m !== "object") return null;
+  const raw = m.import_batch_id ?? m.importBatchId;
+  if (raw === undefined || raw === null || raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeHighlightBatchId(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 function formatDate(dateString) {
   if (!dateString) return "—";
   const date = new Date(`${String(dateString).slice(0, 10)}T12:00:00`);
@@ -227,11 +242,13 @@ const COMFY_COL_WEIGHT = {
   operation_type: 0.95,
   /** Extra width vs debe/haber/saldo (más texto largo). */
   description: 2.4,
-  reference: 1.15,
-  debit_bs: 1.0,
+  /** Narrower to give space to categoría (mostly short refs). */
+  reference: 0.82,
+  debit_bs: 0.88,
   credit_bs: 1.0,
   balance_bs: 1.0,
-  category: 1.05,
+  /** Wider dropdown labels (takes space freed from referencia + debe). */
+  category: 1.48,
 };
 
 /** Misma idea que el padding horizontal de las celdas en vista cómoda (tbody). */
@@ -358,6 +375,13 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
     suppressTopToolbar = false,
     /** Ref al botón «Columnas» en el padre; el menú se posiciona con `position:fixed`. */
     columnPickerAnchorRef = null,
+    /** ID del lote BNC recién importado; resalta filas con el mismo `import_batch_id`. */
+    highlightImportBatchId = null,
+    /**
+     * Historial de lote: una sola fila compacta con título a la izquierda y Recargar/Columnas a la derecha;
+     * oculta el texto «X / Y visibles» debajo del título.
+     */
+    titleToolbarInline = false,
   },
   ref
 ) {
@@ -370,7 +394,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
   const [categoryFilter, setCategoryFilter] = useState("");
   const [descSearch, setDescSearch] = useState("");
   const [sortColumn, setSortColumn] = useState("movement_date");
-  const [sortDir, setSortDir] = useState("asc");
+  const [sortDir, setSortDir] = useState("desc");
   const [savingMovementId, setSavingMovementId] = useState(null);
   const [lotColFilterDate, setLotColFilterDate] = useState("");
   const [lotColFilterCode, setLotColFilterCode] = useState("");
@@ -496,7 +520,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
     setCategoryFilter("");
     setDescSearch("");
     setSortColumn("movement_date");
-    setSortDir("asc");
+    setSortDir("desc");
     setLotColFilterDate("");
     setLotColFilterCode("");
     setLotColFilterTxnType("");
@@ -796,6 +820,15 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
   const showMetaStrip =
     !hideTitleBar && hasContext && movements.length > 0 && !loading;
 
+  const showVisibleCountStrip = showMetaStrip && !titleToolbarInline;
+
+  const showInlineLotToolbar =
+    titleToolbarInline &&
+    showOuterToolbarRow &&
+    hasContext &&
+    movements.length > 0 &&
+    displayedMovements.length > 0;
+
   const showFullTitleBlock =
     !hideTitleBar ||
     error ||
@@ -818,28 +851,132 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
             showMetaStrip ? "bg-gray-50" : ""
           }`}
         >
-          <div className="px-3 py-2">
+          <div
+            className={
+              titleToolbarInline
+                ? "px-2 py-0.5 sm:px-3"
+                : "px-3 py-2"
+            }
+          >
             {!hideTitleBar ? (
               <>
-                <div className="min-w-0">
-                  <h2 className="text-base font-semibold text-gray-800 leading-snug">
-                    {title}
-                  </h2>
-                  {!hasContext && hintNoContext && (
-                    <p className="text-[11px] text-gray-500 mt-0.5">
-                      {hintNoContext}
-                    </p>
+                <div
+                  className={
+                    titleToolbarInline
+                      ? "flex flex-wrap items-start justify-between gap-x-3 gap-y-1"
+                      : ""
+                  }
+                >
+                  <div className="min-w-0 flex-1">
+                    <h2
+                      className={
+                        titleToolbarInline
+                          ? "text-sm font-semibold text-gray-800 leading-tight"
+                          : "text-base font-semibold text-gray-800 leading-snug"
+                      }
+                    >
+                      {title}
+                    </h2>
+                    {!hasContext && hintNoContext && (
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        {hintNoContext}
+                      </p>
+                    )}
+                  </div>
+
+                  {showInlineLotToolbar && (
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={resetLotFilters}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                        title="Quitar todos los filtros y la búsqueda en descripción"
+                        aria-label="Recargar filtros"
+                      >
+                        <RefreshIcon className="h-3.5 w-3.5 shrink-0 text-slate-600" />
+                        Recargar
+                      </button>
+                      {columnVisibilityStorageKey && (
+                        <div
+                          className="relative shrink-0"
+                          ref={colPickerRef}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setColPickerOpen((o) => !o)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                            aria-expanded={colPickerOpen}
+                          >
+                            <Settings2
+                              className="h-3.5 w-3.5 text-slate-600"
+                              aria-hidden
+                            />
+                            Columnas
+                          </button>
+                          {colPickerOpen && (
+                            <div
+                              ref={colPickerMenuRef}
+                              className="absolute right-0 top-full z-40 mt-1.5 w-60 rounded-xl border border-slate-200 bg-white py-2 shadow-xl shadow-slate-900/15"
+                              role="menu"
+                            >
+                              <p className="border-b border-slate-100 px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Mostrar columnas
+                              </p>
+                              <ul className="max-h-[min(70vh,22rem)] overflow-y-auto py-1">
+                                {MOV_COLUMN_ORDER.map((id) => (
+                                  <li key={id}>
+                                    <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-slate-800 hover:bg-slate-50">
+                                      <input
+                                        type="checkbox"
+                                        className="h-4 w-4 rounded border-slate-300 text-zm-green focus:ring-zm-green/40"
+                                        checked={colVis[id] !== false}
+                                        disabled={id === "movement_date"}
+                                        onChange={() =>
+                                          toggleColumnVisibility(id)
+                                        }
+                                      />
+                                      <span>{MOV_COLUMN_LABELS[id]}</span>
+                                      {id === "movement_date" && (
+                                        <span className="ml-auto text-[10px] text-slate-400">
+                                          siempre
+                                        </span>
+                                      )}
+                                    </label>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 
                 {error && (
-                  <p className="text-xs text-red-600 mt-1.5">{error}</p>
+                  <p
+                    className={
+                      titleToolbarInline
+                        ? "text-xs text-red-600 mt-1"
+                        : "text-xs text-red-600 mt-1.5"
+                    }
+                  >
+                    {error}
+                  </p>
                 )}
                 {loading && (
-                  <p className="text-[11px] text-gray-500 mt-1.5">Cargando…</p>
+                  <p
+                    className={
+                      titleToolbarInline
+                        ? "text-[11px] text-gray-500 mt-1"
+                        : "text-[11px] text-gray-500 mt-1.5"
+                    }
+                  >
+                    Cargando…
+                  </p>
                 )}
 
-                {showMetaStrip && (
+                {showVisibleCountStrip && (
                   <p className="text-[11px] text-gray-500 mt-2 lg:mt-1.5 leading-snug">
                     <span className="font-semibold text-gray-700">
                       {displayedMovements.length}
@@ -891,7 +1028,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
         movements.length > 0 &&
         displayedMovements.length > 0 && (
           <>
-            {showOuterToolbarRow && (
+            {showOuterToolbarRow && !titleToolbarInline && (
               <div className="flex flex-col gap-2 px-2 pb-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-3">
                 <button
                   type="button"
@@ -1377,7 +1514,8 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                             </option>
                           ))}
                         </select>
-                        {!hideInlineSummaryTotals &&
+                        {!titleToolbarInline &&
+                          !hideInlineSummaryTotals &&
                           !visibleCol("description") &&
                           !visibleCol("reference") && (
                           <div className="mt-1.5 text-right">
@@ -1487,7 +1625,8 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                           title="Filtra por descripción, referencia o códigos"
                           autoComplete="off"
                         />
-                        {!hideInlineSummaryTotals &&
+                        {!titleToolbarInline &&
+                          !hideInlineSummaryTotals &&
                           !visibleCol("reference") && (
                           <div className="mt-1.5 text-right">
                             <span className="block text-[10px] leading-tight text-gray-500">
@@ -1502,7 +1641,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                     )}
                     {visibleCol("reference") && (
                       <th className="text-right px-2 py-1 align-bottom whitespace-nowrap bg-gray-50 border-l border-gray-100 min-w-0">
-                        {!hideInlineSummaryTotals && (
+                        {!titleToolbarInline && !hideInlineSummaryTotals && (
                           <>
                             <span className="block text-[10px] leading-tight text-gray-500 font-normal">
                               Σ visible
@@ -1594,13 +1733,21 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                     );
                     const hasLegacy =
                       m.category && !optSet.has(m.category);
+                    const hl = normalizeHighlightBatchId(highlightImportBatchId);
+                    const rowBatch = movementImportBatchId(m);
+                    const isImportedHighlight =
+                      hl != null && rowBatch != null && rowBatch === hl;
                     return (
                       <tr
                         key={m.id}
                         className={`border-t transition-colors ${
-                          comfy
-                            ? "border-slate-100 hover:bg-blue-50/40 odd:bg-white even:bg-slate-50/50"
-                            : "hover:bg-gray-50"
+                          isImportedHighlight
+                            ? comfy
+                              ? "border-zm-green/10 bg-zm-yellow/30 hover:bg-zm-yellow/40"
+                              : "border-zm-green/10 bg-zm-yellow/30 hover:bg-zm-yellow/40"
+                            : comfy
+                              ? "border-slate-100 hover:bg-blue-50/40 odd:bg-white even:bg-slate-50/50"
+                              : "hover:bg-gray-50"
                         }`}
                       >
                         {visibleCol("movement_date") && (

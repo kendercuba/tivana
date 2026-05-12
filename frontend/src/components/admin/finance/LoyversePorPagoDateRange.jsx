@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { DayPicker } from "react-day-picker";
 import {
   addDays,
@@ -56,15 +57,58 @@ export default function LoyversePorPagoDateRange({
   const [draft, setDraft] = useState(undefined);
   const [visibleMonth, setVisibleMonth] = useState(() => new Date());
   const rootRef = useRef(null);
+  const triggerRef = useRef(null);
+  const portalRef = useRef(null);
+  const [popoverStyle, setPopoverStyle] = useState({});
 
   const fromD = ymdToLocalDate(rangeStart);
   const toD = ymdToLocalDate(rangeEnd);
 
+  function updatePopoverPosition() {
+    const el = triggerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const margin = 8;
+    const maxPanel = Math.min(36 * 16, vw - margin * 2);
+    const width = Math.min(maxPanel, vw - margin * 2);
+    let left = rect.left;
+    if (left + width > vw - margin) {
+      left = Math.max(margin, vw - margin - width);
+    }
+    const top = rect.bottom + margin;
+    setPopoverStyle({
+      position: "fixed",
+      left: `${Math.round(left)}px`,
+      top: `${Math.round(top)}px`,
+      width: `${Math.round(width)}px`,
+      maxWidth: `${Math.round(width)}px`,
+      zIndex: 100,
+    });
+  }
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    updatePopoverPosition();
+    const onScrollOrResize = () => updatePopoverPosition();
+    window.addEventListener("resize", onScrollOrResize);
+    window.addEventListener("scroll", onScrollOrResize, true);
+    return () => {
+      window.removeEventListener("resize", onScrollOrResize);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+    };
+  }, [open]);
+
   useEffect(() => {
     function handleMouseDown(e) {
-      if (rootRef.current && !rootRef.current.contains(e.target)) {
-        setOpen(false);
+      const t = e.target;
+      if (
+        rootRef.current?.contains(t) ||
+        portalRef.current?.contains(t)
+      ) {
+        return;
       }
+      setOpen(false);
     }
     document.addEventListener("mousedown", handleMouseDown);
     return () => document.removeEventListener("mousedown", handleMouseDown);
@@ -277,9 +321,113 @@ export default function LoyversePorPagoDateRange({
         ? format(draft.to, "dd/MM/yyyy", { locale: es })
         : "—";
 
+  const popoverEl =
+    open &&
+    typeof document !== "undefined" &&
+    createPortal(
+      <div
+        ref={portalRef}
+        style={popoverStyle}
+        className="rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-900/10"
+        role="dialog"
+        aria-label="Seleccionar rango de fechas"
+      >
+        <div className="flex max-h-[min(85vh,520px)] flex-col md:flex-row md:max-h-[min(85vh,440px)]">
+          <div className="min-w-0 flex-1 overflow-y-auto border-b border-gray-100 p-3 md:border-b-0 md:border-r md:p-4">
+            <div className="loyverse-rdp-override [&_.rdp-root]:m-0 [&_.rdp-months]:flex-wrap">
+              <DayPicker
+                mode="range"
+                selected={draft}
+                onSelect={handleCalendarSelect}
+                month={visibleMonth}
+                onMonthChange={setVisibleMonth}
+                locale={es}
+                weekStartsOn={1}
+                numberOfMonths={1}
+              />
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-3 border-t border-gray-100 pt-3 text-xs">
+              <div>
+                <p className="mb-0.5 font-medium text-gray-500">Fecha de inicio</p>
+                <p className="tabular-nums text-gray-900">
+                  {draftFrom
+                    ? format(draftFrom, "dd/MM/yyyy", { locale: es })
+                    : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="mb-0.5 font-medium text-gray-500">
+                  Fecha de finalización
+                </p>
+                <p className="tabular-nums text-gray-900">
+                  {draftEndDisplay}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex w-full shrink-0 flex-col md:w-44">
+            <div className="max-h-48 overflow-y-auto px-2 py-2 md:max-h-none md:flex-1 md:overflow-y-auto md:py-3">
+              <nav className="flex flex-col gap-0.5" aria-label="Atajos de fecha">
+                {presets.map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => applyPresetRange(p.fn)}
+                    className="rounded-lg px-3 py-2 text-left text-sm text-gray-800 transition hover:bg-zm-green/10 hover:text-zm-sidebar"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+                {hasBounds && (
+                  <button
+                    type="button"
+                    onClick={applyAllHistoryPreset}
+                    className="rounded-lg px-3 py-2 text-left text-sm text-gray-800 transition hover:bg-zm-green/10 hover:text-zm-sidebar"
+                  >
+                    Todo el historial
+                  </button>
+                )}
+              </nav>
+            </div>
+
+            <div className="mt-auto flex items-center justify-end gap-3 border-t border-gray-100 px-3 py-2.5">
+              <button
+                type="button"
+                onClick={cancelAndClose}
+                className="text-xs font-semibold uppercase tracking-wide text-gray-700 hover:text-gray-900"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={applyDraftAndClose}
+                className="text-xs font-bold uppercase tracking-wide text-zm-green hover:text-zm-green-dark"
+              >
+                Hecho
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <style>{`
+          .loyverse-rdp-override .rdp-root {
+            --rdp-accent-color: #4f772d;
+            --rdp-accent-background-color: rgba(79, 119, 45, 0.14);
+            --rdp-today-color: #3d5f24;
+          }
+          .loyverse-rdp-override .rdp-month_caption {
+            color: #2c4819;
+          }
+        `}</style>
+      </div>,
+      document.body
+    );
+
   return (
     <div className="relative" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="flex min-w-[min(100%,220px)] max-w-full items-center justify-between gap-2 rounded-xl border border-gray-300 bg-white px-3 py-2 text-left text-sm font-medium text-gray-900 shadow-sm transition hover:border-gray-400 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-zm-green/40 focus:ring-offset-1"
@@ -293,103 +441,7 @@ export default function LoyversePorPagoDateRange({
         </span>
       </button>
 
-      {open && (
-        <div
-          className="absolute left-0 top-full z-50 mt-2 w-[min(calc(100vw-2rem),28rem)] sm:w-auto sm:min-w-[min(100vw-2rem,36rem)] rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-900/10"
-          role="dialog"
-          aria-label="Seleccionar rango de fechas"
-        >
-          <div className="flex max-h-[min(85vh,520px)] flex-col md:flex-row md:max-h-[min(85vh,440px)]">
-            <div className="min-w-0 flex-1 overflow-y-auto border-b border-gray-100 p-3 md:border-b-0 md:border-r md:p-4">
-              <div className="loyverse-rdp-override [&_.rdp-root]:m-0 [&_.rdp-months]:flex-wrap">
-                <DayPicker
-                  mode="range"
-                  selected={draft}
-                  onSelect={handleCalendarSelect}
-                  month={visibleMonth}
-                  onMonthChange={setVisibleMonth}
-                  locale={es}
-                  weekStartsOn={1}
-                  numberOfMonths={1}
-                />
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-3 border-t border-gray-100 pt-3 text-xs">
-                <div>
-                  <p className="mb-0.5 font-medium text-gray-500">Fecha de inicio</p>
-                  <p className="tabular-nums text-gray-900">
-                    {draftFrom
-                      ? format(draftFrom, "dd/MM/yyyy", { locale: es })
-                      : "—"}
-                  </p>
-                </div>
-                <div>
-                  <p className="mb-0.5 font-medium text-gray-500">
-                    Fecha de finalización
-                  </p>
-                  <p className="tabular-nums text-gray-900">
-                    {draftEndDisplay}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex w-full shrink-0 flex-col md:w-44">
-              <div className="max-h-48 overflow-y-auto px-2 py-2 md:max-h-none md:flex-1 md:overflow-y-auto md:py-3">
-                <nav className="flex flex-col gap-0.5" aria-label="Atajos de fecha">
-                  {presets.map((p) => (
-                    <button
-                      key={p.key}
-                      type="button"
-                      onClick={() => applyPresetRange(p.fn)}
-                      className="rounded-lg px-3 py-2 text-left text-sm text-gray-800 transition hover:bg-zm-green/10 hover:text-zm-sidebar"
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                  {hasBounds && (
-                    <button
-                      type="button"
-                      onClick={applyAllHistoryPreset}
-                      className="rounded-lg px-3 py-2 text-left text-sm text-gray-800 transition hover:bg-zm-green/10 hover:text-zm-sidebar"
-                    >
-                      Todo el historial
-                    </button>
-                  )}
-                </nav>
-              </div>
-
-              <div className="mt-auto flex items-center justify-end gap-3 border-t border-gray-100 px-3 py-2.5">
-                <button
-                  type="button"
-                  onClick={cancelAndClose}
-                  className="text-xs font-semibold uppercase tracking-wide text-gray-700 hover:text-gray-900"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={applyDraftAndClose}
-                  className="text-xs font-bold uppercase tracking-wide text-zm-green hover:text-zm-green-dark"
-                >
-                  Hecho
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <style>{`
-            /* Override .rdp-root defaults (library sets --rdp-accent-color: blue on .rdp-root). */
-            .loyverse-rdp-override .rdp-root {
-              --rdp-accent-color: #4f772d;
-              --rdp-accent-background-color: rgba(79, 119, 45, 0.14);
-              --rdp-today-color: #3d5f24;
-            }
-            .loyverse-rdp-override .rdp-month_caption {
-              color: #2c4819;
-            }
-          `}</style>
-        </div>
-      )}
+      {popoverEl}
     </div>
   );
 }

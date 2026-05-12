@@ -77,9 +77,13 @@ export default function FinanceDashboard() {
                 Totales a partir de los movimientos ya guardados. Para importar
                 Excel y ver cargas, usa{" "}
                 <strong className="font-medium text-zm-sidebar">
-                  Cuentas bancarias → Cargar estado de cuenta
+                  Cuentas bancarias → Movimientos por cuenta
                 </strong>{" "}
-                en el menú.
+                o{" "}
+                <strong className="font-medium text-zm-sidebar">
+                  Historial de cargas
+                </strong>{" "}
+                en esa misma página.
               </p>
             </>
           ) : (
@@ -89,14 +93,15 @@ export default function FinanceDashboard() {
               </h1>
               <p className="text-sm text-gray-500 mt-1 max-w-xl">
                 Resúmenes por categoría a partir de los movimientos guardados en
-                PostgreSQL. Para subir Excel y ver el historial de cargas, usa
-                «Subir excel» (Finanzas → Cuentas bancarias) en el menú lateral.
+                PostgreSQL. Para subir Excel y ver el historial de cargas, entra
+                en Finanzas → Cuentas bancarias y abre Movimientos por cuenta o
+                Historial de cargas.
               </p>
             </>
           )}
         </div>
         <Link
-          to={`${financeBase}/cargar-excel`}
+          to={`${financeBase}/cuentas?cuentasSub=movimientos`}
           className={
             isZonaMarket
               ? "text-sm font-medium text-zm-green hover:text-zm-green-dark hover:underline"
@@ -104,8 +109,8 @@ export default function FinanceDashboard() {
           }
         >
           {isZonaMarket
-            ? "Ir a cargar estado de cuenta →"
-            : "Ir a subir excel →"}
+            ? "Ir a movimientos e importar →"
+            : "Ir a movimientos e importar →"}
         </Link>
       </div>
 

@@ -15,6 +15,28 @@ async function parseJsonResponse(response) {
   return response.json();
 }
 
+/**
+ * Dry-run: compares strict reportHint with inferred workbook shape (same rules as import).
+ * @returns {{ contentShape: string, ok: boolean, message: string|null }}
+ */
+export async function validateLoyverseReportHint({ file, reportHint }) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("reportHint", reportHint || "auto");
+
+  const response = await fetch(`${API_URL}/finance/loyverse/validate-report-hint`, {
+    method: "POST",
+    body: formData,
+    credentials: "include",
+  });
+
+  const data = await parseJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(data.message || "No se pudo validar el archivo.");
+  }
+  return data.data;
+}
+
 export async function importLoyverseFile({ file, reportHint }) {
   const formData = new FormData();
   formData.append("file", file);

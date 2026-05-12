@@ -21,10 +21,23 @@ function financeNavClass({ isActive }) {
 }
 
 const BANKING_CHILDREN = [
-  { to: "/admin/finance/cargar-excel", label: "Subir excel" },
-  { to: "/admin/finance/categorias", label: "Categorías" },
-  { to: "/admin/finance/reglas", label: "Reglas" },
-  { to: "/admin/finance/cuentas", label: "Cuentas" },
+  {
+    to: "/admin/finance/cuentas?cuentasSub=gestionar",
+    label: "Gestionar cuentas",
+  },
+  {
+    to: "/admin/finance/cuentas?cuentasSub=movimientos",
+    label: "Movimientos / importar",
+  },
+  {
+    to: "/admin/finance/cuentas?cuentasSub=historial",
+    label: "Historial de cargas",
+  },
+  {
+    to: "/admin/finance/cuentas?cuentasSub=categorias",
+    label: "Categorías",
+  },
+  { to: "/admin/finance/cuentas?cuentasSub=reglas", label: "Reglas" },
 ];
 
 const MAIN_LINKS = [
@@ -48,9 +61,7 @@ function cn(...parts) {
 
 export default function AdminLayout({ children }) {
   const location = useLocation();
-  const isUnderBanking = BANKING_CHILDREN.some(
-    (item) => location.pathname === item.to
-  );
+  const isUnderBanking = location.pathname === "/admin/finance/cuentas";
   const [bankingOpen, setBankingOpen] = useState(isUnderBanking);
   const [financeFlyoutOpen, setFinanceFlyoutOpen] = useState(false);
 
@@ -169,7 +180,7 @@ export default function AdminLayout({ children }) {
                     className="mt-1 ml-2 flex flex-col gap-0.5 border-l border-gray-600 pl-3"
                   >
                     {BANKING_CHILDREN.map(({ to, label }) => (
-                      <li key={to}>
+                      <li key={label}>
                         <NavLink to={to} className={financeNavClass}>
                           {label}
                         </NavLink>
@@ -231,7 +242,7 @@ export default function AdminLayout({ children }) {
               </p>
               {BANKING_CHILDREN.map(({ to, label }) => (
                 <NavLink
-                  key={to}
+                  key={label}
                   to={to}
                   className={financeNavClass}
                   onClick={() => setFinanceFlyoutOpen(false)}

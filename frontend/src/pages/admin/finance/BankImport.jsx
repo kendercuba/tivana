@@ -1,28 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import useBankImport from "../../../hooks/admin/finance/useBankImport";
-import BankMovementsTableBlock from "../../../components/admin/finance/BankMovementsTableBlock";
-import {
-  fetchBankImportBatches,
-  fetchBankBatchMovements,
-  fetchBankAccounts,
-  deleteBankImportBatch,
-  patchBankImportBatchAccount,
-} from "../../../api/admin/finance/bankApi";
+import BankImportBatchHistory from "../../../components/admin/finance/BankImportBatchHistory.jsx";
+import { fetchBankAccounts } from "../../../api/admin/finance/bankApi";
 import { useFinanceBasePath } from "../../../contexts/FinanceBasePathContext.jsx";
-
-function formatDateShort(value) {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value);
-  return new Intl.DateTimeFormat("es-VE", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
-}
 
 export default function BankImport({
   accountsRefreshToken = 0,
@@ -32,29 +13,11 @@ export default function BankImport({
   const isZonaMarket = financeBase.startsWith("/zonamarket");
   const [file, setFile] = useState(null);
   const [bankAccountsAll, setBankAccountsAll] = useState([]);
-
-  const [batches, setBatches] = useState([]);
-  const [batchesError, setBatchesError] = useState(null);
-  const [selectedBatchId, setSelectedBatchId] = useState(null);
-  const [batchMovements, setBatchMovements] = useState([]);
-  const [movementsLoading, setMovementsLoading] = useState(false);
-  const [movementsError, setMovementsError] = useState(null);
-
-  const [reassigningBatchId, setReassigningBatchId] = useState(null);
+  const [historyBump, setHistoryBump] = useState(0);
 
   const { loading, error, result, handleImport } = useBankImport();
 
   const activeAccounts = bankAccountsAll.filter((a) => a.is_active);
-
-  const selectedBatchRecord = useMemo(() => {
-    if (selectedBatchId == null || selectedBatchId === "") return null;
-    const sid = Number(selectedBatchId);
-    return batches.find((b) => Number(b.id) === sid) ?? null;
-  }, [selectedBatchId, batches]);
-
-  function accountDisplayName(id) {
-    return bankAccountsAll.find((a) => a.id === id)?.name ?? `#${id}`;
-  }
 
   async function loadBankAccounts() {
     try {
@@ -65,109 +28,15 @@ export default function BankImport({
     }
   }
 
-  async function loadBatches() {
-    try {
-      setBatchesError(null);
-      const res = await fetchBankImportBatches({ limit: 100 });
-      setBatches(res.data || []);
-    } catch (e) {
-      setBatchesError(e.message);
-    }
-  }
-
-  useEffect(() => {
-    loadBatches();
-  }, []);
-
   useEffect(() => {
     loadBankAccounts();
   }, [accountsRefreshToken]);
 
   useEffect(() => {
-    if (result?.success) {
-      loadBatches();
+    if (result?.success && result?.data?.importBatchId != null) {
+      setHistoryBump((n) => n + 1);
     }
-  }, [result?.data?.importBatchId]);
-
-  /** Tras importar, abre el lote nuevo en «Movimientos del lote seleccionado» (sin tabla duplicada arriba). */
-  useEffect(() => {
-    const id = result?.data?.importBatchId;
-    if (result?.success && id != null && id !== "") {
-      setSelectedBatchId(id);
-    }
-  }, [result?.success, result?.data?.importBatchId]);
-
-  useEffect(() => {
-    if (!selectedBatchId) {
-      setBatchMovements([]);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        setMovementsLoading(true);
-        setMovementsError(null);
-        const res = await fetchBankBatchMovements(selectedBatchId);
-        if (!cancelled) setBatchMovements(res.data || []);
-      } catch (e) {
-        if (!cancelled) setMovementsError(e.message);
-      } finally {
-        if (!cancelled) setMovementsLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedBatchId]);
-
-  async function handleDeleteBatch(b) {
-    const msg =
-      `¿Eliminar el lote #${b.id} (${b.original_filename})? ` +
-      "Se borrarán de la base de datos los movimientos que se guardaron en esa importación. No se puede deshacer.";
-    if (!window.confirm(msg)) return;
-    try {
-      await deleteBankImportBatch(b.id);
-      if (selectedBatchId === b.id) {
-        setSelectedBatchId(null);
-      }
-      await loadBatches();
-    } catch (e) {
-      alert(e.message);
-    }
-  }
-
-  /** Opciones del desplegable de cuenta por fila (incluye cuenta actual si está inactiva). */
-  function accountsForBatchSelect(batchAccountId) {
-    const idNum = Number(batchAccountId);
-    const activeIds = new Set(activeAccounts.map((a) => a.id));
-    if (activeIds.has(idNum)) return activeAccounts;
-    const current = bankAccountsAll.find((a) => a.id === idNum);
-    if (current) return [current, ...activeAccounts];
-    return activeAccounts;
-  }
-
-  async function handleBatchAccountChange(batch, nextValue) {
-    const nextId = Number(nextValue);
-    if (
-      !Number.isFinite(nextId) ||
-      nextId === Number(batch.bank_account_id)
-    ) {
-      return;
-    }
-    setReassigningBatchId(batch.id);
-    try {
-      await patchBankImportBatchAccount(batch.id, nextId);
-      await loadBatches();
-      if (selectedBatchId === batch.id) {
-        const res = await fetchBankBatchMovements(batch.id);
-        setBatchMovements(res.data || []);
-      }
-    } catch (e) {
-      alert(e.message);
-    } finally {
-      setReassigningBatchId(null);
-    }
-  }
+  }, [result?.data?.importBatchId, result?.success]);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -382,194 +251,12 @@ export default function BankImport({
         </div>
       )}
 
-      <section
-        className={
-          isZonaMarket
-            ? "bg-white rounded-xl border border-zm-yellow/50 shadow-md shadow-zm-sidebar/5 ring-1 ring-zm-green/10 p-4"
-            : "bg-white rounded-xl border border-gray-200 shadow-sm p-4"
-        }
-      >
-        <h2
-          className={
-            isZonaMarket
-              ? "text-base font-semibold text-zm-sidebar mb-3"
-              : "text-base font-semibold text-gray-800 mb-3"
-          }
-        >
-          Historial de importaciones BNC
-        </h2>
-        {batchesError && (
-          <p className="text-sm text-red-600 mb-2">{batchesError}</p>
-        )}
-        <div className="overflow-x-auto max-h-[min(17rem,42vh)] overflow-y-auto border rounded-lg">
-          <table className="min-w-full text-sm">
-            <thead
-              className={
-                isZonaMarket
-                  ? "bg-zm-yellow/35 text-zm-sidebar sticky top-0"
-                  : "bg-gray-100 sticky top-0"
-              }
-            >
-              <tr>
-                <th className="text-left px-3 py-2">Fecha carga</th>
-                <th className="text-left px-3 py-2">Archivo</th>
-                <th className="text-left px-3 py-2">Cuenta</th>
-                <th className="text-right px-3 py-2">En archivo</th>
-                <th className="text-right px-3 py-2">Nuevos</th>
-                <th className="text-right px-3 py-2">Dup.</th>
-                <th className="text-left px-3 py-2">Ver</th>
-                <th className="w-12 px-2 py-2 text-center" scope="col">
-                  <span className="sr-only">Eliminar</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {batches.map((b) => (
-                <tr
-                  key={b.id}
-                  className={
-                    isZonaMarket
-                      ? `border-t cursor-pointer border-zm-green/10 hover:bg-zm-yellow/20 ${
-                          selectedBatchId === b.id ? "bg-zm-yellow/30" : ""
-                        }`
-                      : `border-t cursor-pointer hover:bg-blue-50 ${
-                          selectedBatchId === b.id ? "bg-blue-50" : ""
-                        }`
-                  }
-                  onClick={() => setSelectedBatchId(b.id)}
-                >
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    {formatDateShort(b.created_at)}
-                  </td>
-                  <td className="px-3 py-2 max-w-xs truncate" title={b.original_filename}>
-                    {b.original_filename}
-                  </td>
-                  <td
-                    className="px-2 py-1 align-middle"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <select
-                      value={String(b.bank_account_id)}
-                      disabled={
-                        reassigningBatchId === b.id ||
-                        activeAccounts.length === 0
-                      }
-                      onChange={(e) =>
-                        handleBatchAccountChange(b, e.target.value)
-                      }
-                      className="max-w-[min(240px,48vw)] border border-gray-300 rounded px-1 py-0.5 text-xs bg-white disabled:opacity-60"
-                      title="Cambiar cuenta asignada a este lote"
-                      aria-label={`Cuenta del lote ${b.id}`}
-                    >
-                      {accountsForBatchSelect(b.bank_account_id).map((a) => (
-                        <option key={a.id} value={String(a.id)}>
-                          {!a.is_active ? `${a.name} (inactiva)` : a.name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-3 py-2 text-right">{b.rows_in_file}</td>
-                  <td
-                    className={
-                      isZonaMarket
-                        ? "px-3 py-2 text-right text-zm-green font-semibold"
-                        : "px-3 py-2 text-right text-green-700 font-medium"
-                    }
-                  >
-                    {b.rows_inserted}
-                  </td>
-                  <td className="px-3 py-2 text-right text-gray-500">
-                    {b.rows_skipped_duplicate}
-                  </td>
-                  <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      className={
-                        isZonaMarket
-                          ? "text-zm-green text-xs font-medium hover:underline hover:text-zm-green-dark"
-                          : "text-blue-600 text-xs hover:underline"
-                      }
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedBatchId(b.id);
-                      }}
-                    >
-                      Lote #{b.id}
-                    </button>
-                  </td>
-                  <td className="px-2 py-2 text-center">
-                    <button
-                      type="button"
-                      className="inline-flex items-center justify-center p-1.5 rounded-md text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200"
-                      title="Eliminar este lote y sus movimientos"
-                      aria-label="Eliminar lote"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteBatch(b);
-                      }}
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="w-4 h-4"
-                      >
-                        <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                        <line x1="10" y1="11" x2="10" y2="17" />
-                        <line x1="14" y1="11" x2="14" y2="17" />
-                      </svg>
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {batches.length === 0 && !batchesError && (
-            <p className="text-sm text-gray-500 p-4">
-              Aún no hay importaciones registradas.
-            </p>
-          )}
-        </div>
-      </section>
-
-      <BankMovementsTableBlock
-        movements={batchMovements}
-        loading={movementsLoading}
-        error={movementsError}
-        resetKey={
-          selectedBatchId != null && selectedBatchId !== ""
-            ? String(selectedBatchId)
-            : ""
-        }
+      <BankImportBatchHistory
+        accountsRefreshToken={accountsRefreshToken}
         categoriesRefreshToken={categoriesRefreshToken}
-        onMovementUpdated={(updated) => {
-          if (!updated?.id) return;
-          setBatchMovements((prev) =>
-            prev.map((x) => (x.id === updated.id ? { ...x, ...updated } : x))
-          );
-        }}
-        title={
-          <>
-            Movimientos del lote seleccionado
-            {selectedBatchId ? ` #${selectedBatchId}` : ""}
-            {selectedBatchRecord != null && (
-              <span className="text-gray-600 font-normal">
-                {" "}
-                — {accountDisplayName(selectedBatchRecord.bank_account_id)}
-              </span>
-            )}
-          </>
-        }
-        emptyLoadedMessage={
-          <p className="text-sm text-gray-500 p-4">
-            Este lote no tiene movimientos guardados.
-          </p>
-        }
+        refreshToken={historyBump}
+        preferredSelectBatchId={result?.data?.importBatchId ?? null}
+        useZonaMarketStyle={isZonaMarket}
       />
     </div>
   );

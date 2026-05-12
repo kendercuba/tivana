@@ -1,22 +1,39 @@
 import { Navigate, useParams, useSearchParams } from "react-router-dom";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+
+const BANK_IMPORT_HIGHLIGHT_STORAGE_KEY = "zm-bank-import-highlight-batch";
+
+function readStoredBankImportHighlightBatchId() {
+  try {
+    const raw = sessionStorage.getItem(BANK_IMPORT_HIGHLIGHT_STORAGE_KEY);
+    if (raw != null && raw !== "") {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
 import { useFinanceBasePath } from "../../../contexts/FinanceBasePathContext.jsx";
-import BankImport from "./BankImport.jsx";
 import BankAccountsManager from "../../../components/admin/finance/BankAccountsManager.jsx";
 import BankAccountMovementsMonitor from "../../../components/admin/finance/BankAccountMovementsMonitor.jsx";
 import FinanceCategoriesManager from "../../../components/admin/finance/FinanceCategoriesManager.jsx";
 import FinanceClassificationRulesManager from "../../../components/admin/finance/FinanceClassificationRulesManager.jsx";
-
-const SECTIONS = ["cargar-excel", "cuentas", "categorias", "reglas"];
+import BankImportBatchHistory from "../../../components/admin/finance/BankImportBatchHistory.jsx";
 
 function cuentasSubFromSearch(searchParams) {
   const s = searchParams.get("cuentasSub");
   if (s === "gestionar") return "gestionar";
+  if (s === "historial") return "historial";
+  if (s === "categorias") return "categorias";
+  if (s === "reglas") return "reglas";
   return "movimientos";
 }
 
 export default function FinanceBankHub() {
   const financeBase = useFinanceBasePath();
+  const isZonaMarketFinance = financeBase.startsWith("/zonamarket");
   const { section } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -24,6 +41,30 @@ export default function FinanceBankHub() {
 
   const [accountsRefreshToken, setAccountsRefreshToken] = useState(0);
   const [categoriesRefreshToken, setCategoriesRefreshToken] = useState(0);
+  /** Bumps BankImportBatchHistory when movimientos tab imports a file. */
+  const [bankImportHistoryTick, setBankImportHistoryTick] = useState(0);
+
+  /**
+   * Lives in the hub (not inside Movimientos) so tab switches do not unmount
+   * highlight state. Hydrated from sessionStorage so a reload keeps the last batch.
+   */
+  const [bankImportHighlightBatchId, setBankImportHighlightBatchId] =
+    useState(readStoredBankImportHighlightBatchId);
+
+  useEffect(() => {
+    try {
+      if (bankImportHighlightBatchId == null) {
+        sessionStorage.removeItem(BANK_IMPORT_HIGHLIGHT_STORAGE_KEY);
+      } else {
+        sessionStorage.setItem(
+          BANK_IMPORT_HIGHLIGHT_STORAGE_KEY,
+          String(bankImportHighlightBatchId)
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [bankImportHighlightBatchId]);
 
   const bumpBankAccountsRefresh = useCallback(() => {
     setAccountsRefreshToken((n) => n + 1);
@@ -33,21 +74,30 @@ export default function FinanceBankHub() {
     setCategoriesRefreshToken((n) => n + 1);
   }, []);
 
-  const prevSectionRef = useRef(null);
+  if (section === "categorias") {
+    return (
+      <Navigate
+        to={`${financeBase}/cuentas?cuentasSub=categorias`}
+        replace
+      />
+    );
+  }
+  if (section === "reglas") {
+    return (
+      <Navigate to={`${financeBase}/cuentas?cuentasSub=reglas`} replace />
+    );
+  }
+  if (section === "cargar-excel") {
+    return (
+      <Navigate
+        to={`${financeBase}/cuentas?cuentasSub=movimientos`}
+        replace
+      />
+    );
+  }
 
-  useEffect(() => {
-    const prev = prevSectionRef.current;
-    if (section === "cargar-excel" && prev !== null && prev !== "cargar-excel") {
-      setAccountsRefreshToken((n) => n + 1);
-    }
-    if (section === "cuentas" && prev === "cargar-excel") {
-      setAccountsRefreshToken((n) => n + 1);
-    }
-    prevSectionRef.current = section;
-  }, [section]);
-
-  if (!SECTIONS.includes(section)) {
-    return <Navigate to={`${financeBase}/cargar-excel`} replace />;
+  if (section !== "cuentas") {
+    return <Navigate to={`${financeBase}/cuentas`} replace />;
   }
 
   const cuentasSubBtn = (sub, label) => (
@@ -67,58 +117,80 @@ export default function FinanceBankHub() {
   );
 
   const compactMovimientosChrome =
-    section === "cuentas" && cuentasSub === "movimientos";
+    cuentasSub === "movimientos" || cuentasSub === "historial";
 
   return (
     <div>
-      {section === "cuentas" && (
-        <div
-          className={`max-w-4xl ${compactMovimientosChrome ? "px-4 pt-2 pb-0 sm:px-6" : "px-4 pt-3 pb-0 sm:px-6"}`}
-        >
-          <h1 className="text-xl font-bold text-zm-sidebar leading-tight">
+      <div className="w-full font-zm">
+        <div className="flex w-full items-center bg-zm-green px-4 sm:px-6 py-3 text-white shadow-sm rounded-b-xl">
+          <h1 className="text-sm sm:text-base font-semibold tracking-tight">
             Cuentas Bancarias
           </h1>
-          <div className="border-b border-zm-green/20 mt-2">
-            <div className="max-w-6xl flex flex-wrap gap-1 py-1">
+        </div>
+        <div
+          className={`${compactMovimientosChrome ? "px-4 pt-3 pb-0 sm:px-6" : "px-4 pt-3 pb-0 sm:px-6"}`}
+        >
+          <div className="border-b border-zm-green/20">
+            <div className="flex flex-wrap gap-1 py-1">
               {cuentasSubBtn("gestionar", "Gestionar cuentas")}
               {cuentasSubBtn("movimientos", "Movimientos por cuenta")}
+              {cuentasSubBtn("historial", "Historial de cargas")}
+              {cuentasSubBtn("categorias", "Categorías")}
+              {cuentasSubBtn("reglas", "Reglas")}
             </div>
           </div>
         </div>
-      )}
+      </div>
 
-      {section === "cuentas" && cuentasSub === "gestionar" && (
+      {cuentasSub === "gestionar" && (
         <div className="p-6 max-w-4xl mx-auto w-full">
           <BankAccountsManager onAccountsChanged={bumpBankAccountsRefresh} />
         </div>
       )}
 
-      {section === "cuentas" && cuentasSub === "movimientos" && (
+      {cuentasSub === "movimientos" && (
         <div className="max-w-none min-w-0 box-border px-3 pb-6 pt-2 sm:px-5 lg:px-6">
           <BankAccountMovementsMonitor
             categoriesRefreshToken={categoriesRefreshToken}
             accountsRefreshToken={accountsRefreshToken}
+            highlightImportBatchId={bankImportHighlightBatchId}
+            onHighlightImportBatchIdChange={setBankImportHighlightBatchId}
+            onImportSuccess={() => {
+              bumpBankAccountsRefresh();
+              setBankImportHistoryTick((n) => n + 1);
+            }}
           />
         </div>
       )}
 
-      {section === "cargar-excel" && (
-        <BankImport
-          accountsRefreshToken={accountsRefreshToken}
-          categoriesRefreshToken={categoriesRefreshToken}
-        />
+      {cuentasSub === "historial" && (
+        <div className="max-w-none min-w-0 box-border px-3 pb-6 pt-2 sm:px-5 lg:px-6">
+          <BankImportBatchHistory
+            accountsRefreshToken={accountsRefreshToken}
+            categoriesRefreshToken={categoriesRefreshToken}
+            refreshToken={`${bankImportHistoryTick}:${accountsRefreshToken}`}
+            useZonaMarketStyle={isZonaMarketFinance}
+            onImportBatchDeleted={(deletedBatchId) => {
+              setBankImportHighlightBatchId((prev) =>
+                prev != null && Number(prev) === Number(deletedBatchId)
+                  ? null
+                  : prev
+              );
+            }}
+          />
+        </div>
       )}
 
-      {section === "categorias" && (
-        <div className="p-6 max-w-4xl">
+      {cuentasSub === "categorias" && (
+        <div className="p-6 max-w-4xl mx-auto w-full">
           <FinanceCategoriesManager
             onCategoriesChanged={bumpCategoriesRefresh}
           />
         </div>
       )}
 
-      {section === "reglas" && (
-        <div className="p-6 max-w-6xl">
+      {cuentasSub === "reglas" && (
+        <div className="p-6 max-w-6xl mx-auto w-full">
           <FinanceClassificationRulesManager />
         </div>
       )}

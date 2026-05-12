@@ -1,11 +1,18 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
-import { Banknote, CreditCard, Smartphone, Send } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Banknote, CreditCard, Smartphone, Send, Upload } from "lucide-react";
 import {
   fetchLoyverseFactsByTypes,
   fetchLoyverseDailyRates,
   saveLoyverseDailyRate,
+  validateLoyverseReportHint,
 } from "../../../api/admin/finance/loyverseApi";
+
+/** Excel/CSV Loyverse; el sistema distingue el reporte por cabeceras, no por extensión. */
+const LOYVERSE_UPLOAD_ACCEPT =
+  ".xls,.xlsx,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 import LoyversePorPagoDateRange from "../../../components/admin/finance/LoyversePorPagoDateRange.jsx";
+import LoyverseImportBatchHistory from "../../../components/admin/finance/LoyverseImportBatchHistory.jsx";
+import useLoyverseImport from "../../../hooks/admin/finance/useLoyverseImport";
 
 function formatDateShort(value) {
   if (!value) return "—";
@@ -85,6 +92,34 @@ function minYmd(a, b) {
 function maxYmd(a, b) {
   if (!a || !b) return a || b || "";
   return a >= b ? a : b;
+}
+
+/**
+ * Focus calendar on imported batch dates after refresh; fallback to full data span.
+ * @param {Array<{ business_date?: string, import_batch_id?: unknown }>} rows
+ * @param {number|string} batchId
+ * @returns {{ start: string, end: string } | null}
+ */
+function dateRangeForImportedLoyverseBatch(rows, batchId) {
+  const bid = Number(batchId);
+  if (!Number.isFinite(bid)) return null;
+  const batchDates = rows
+    .filter((r) => Number(r.import_batch_id) === bid)
+    .map((r) => String(r.business_date || "").slice(0, 10))
+    .filter(Boolean)
+    .sort();
+  if (batchDates.length > 0) {
+    return { start: batchDates[0], end: batchDates[batchDates.length - 1] };
+  }
+  const all = [
+    ...new Set(rows.map((r) => String(r.business_date || "").slice(0, 10))),
+  ]
+    .filter(Boolean)
+    .sort();
+  if (all.length > 0) {
+    return { start: all[0], end: all[all.length - 1] };
+  }
+  return null;
 }
 
 /** Etiqueta como en Loyverse / Excel (Tarjeta, Pago Móvil, Efectivo). */
@@ -338,7 +373,24 @@ function UsdBsAggregateCell({
 }
 
 /** Resumen de ventas (filas daily_summary importadas). */
-export function LoyverseResumenVentas() {
+export function LoyverseResumenVentas({
+  highlightBatchId = null,
+  onHighlightBatchIdChange,
+} = {}) {
+  const [topTab, setTopTab] = useState("tabla");
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadInputKey, setUploadInputKey] = useState(0);
+  const [fileHintError, setFileHintError] = useState(null);
+  const [fileHintValidating, setFileHintValidating] = useState(false);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
+
+  const {
+    loading: importLoading,
+    error: importError,
+    result: importResult,
+    handleImport,
+  } = useLoyverseImport();
+
   const [rows, setRows] = useState([]);
   const [ratesByDate, setRatesByDate] = useState({});
   const [drafts, setDrafts] = useState({});
@@ -350,54 +402,92 @@ export function LoyverseResumenVentas() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
+  const refreshFacts = useCallback(async () => {
+    try {
+      setLoading(true);
+      setErr(null);
+      const factsRes = await fetchLoyverseFactsByTypes(["daily_summary"], {
+        limit: 15000,
+      });
+      let ratesData = [];
       try {
-        setLoading(true);
-        setErr(null);
-        const factsRes = await fetchLoyverseFactsByTypes(["daily_summary"], {
-          limit: 15000,
-        });
-        let ratesData = [];
-        try {
-          const ratesRes = await fetchLoyverseDailyRates();
-          ratesData = ratesRes.data || [];
-        } catch {
-          ratesData = [];
-        }
-        if (cancelled) return;
-        setRows(factsRes.data || []);
-        const map = {};
-        for (const row of ratesData) {
-          if (row.business_date != null && row.rate_bs != null) {
-            map[row.business_date] = Number(row.rate_bs);
-          }
-        }
-        setRatesByDate(map);
-      } catch (e) {
-        if (!cancelled) setErr(e.message);
-      } finally {
-        if (!cancelled) setLoading(false);
+        const ratesRes = await fetchLoyverseDailyRates();
+        ratesData = ratesRes.data || [];
+      } catch {
+        ratesData = [];
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      const data = factsRes.data || [];
+      setRows(data);
+      const map = {};
+      for (const row of ratesData) {
+        if (row.business_date != null && row.rate_bs != null) {
+          map[row.business_date] = Number(row.rate_bs);
+        }
+      }
+      setRatesByDate(map);
+      return data;
+    } catch (e) {
+      setErr(e.message);
+      return null;
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (rows.length === 0 || rangeBootstrapped) return;
-    const uniq = [
-      ...new Set(rows.map((r) => String(r.business_date || "").slice(0, 10))),
-    ]
-      .filter(Boolean)
-      .sort();
-    if (uniq.length === 0) return;
-    setRangeStart(uniq[0]);
-    setRangeEnd(uniq[uniq.length - 1]);
+    refreshFacts();
+  }, [refreshFacts]);
+
+  useEffect(() => {
+    if (!importResult?.success || importResult?.data?.importBatchId == null) {
+      return;
+    }
+    const batchId = importResult.data.importBatchId;
+    onHighlightBatchIdChange?.(batchId);
+    setHistoryRefresh((n) => n + 1);
+    setUploadFile(null);
+    setUploadInputKey((k) => k + 1);
+
+    let cancelled = false;
+    void (async () => {
+      const data = await refreshFacts();
+      if (cancelled || !data) return;
+      const span = dateRangeForImportedLoyverseBatch(data, batchId);
+      if (span) {
+        setRangeStart(span.start);
+        setRangeEnd(span.end);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    importResult?.data?.importBatchId,
+    importResult?.success,
+    onHighlightBatchIdChange,
+    refreshFacts,
+  ]);
+
+  useEffect(() => {
+    if (rangeBootstrapped || loading) return;
+    if (rows.length > 0) {
+      const uniq = [
+        ...new Set(rows.map((r) => String(r.business_date || "").slice(0, 10))),
+      ]
+        .filter(Boolean)
+        .sort();
+      if (uniq.length === 0) return;
+      setRangeStart(uniq[0]);
+      setRangeEnd(uniq[uniq.length - 1]);
+      setRangeBootstrapped(true);
+      return;
+    }
+    const t = localTodayYmd();
+    setRangeStart(t);
+    setRangeEnd(t);
     setRangeBootstrapped(true);
-  }, [rows, rangeBootstrapped]);
+  }, [rows, rangeBootstrapped, loading]);
 
   const filteredRows = useMemo(() => {
     if (!rangeStart || !rangeEnd) return rows;
@@ -564,6 +654,46 @@ export function LoyverseResumenVentas() {
     return v != null && Number.isFinite(Number(v)) ? Number(v) : null;
   }
 
+  async function handleResumenFileSelected(e) {
+    const file = e.target.files?.[0] ?? null;
+    setFileHintError(null);
+    if (!file) {
+      setUploadFile(null);
+      return;
+    }
+    setFileHintValidating(true);
+    try {
+      const v = await validateLoyverseReportHint({
+        file,
+        reportHint: "daily_summary",
+      });
+      if (!v.ok) {
+        setFileHintError(
+          v.message || "El archivo no corresponde al resumen de ventas."
+        );
+        setUploadFile(null);
+        setUploadInputKey((k) => k + 1);
+        return;
+      }
+      setUploadFile(file);
+    } catch (err) {
+      setFileHintError(err.message || "No se pudo validar el archivo.");
+      setUploadFile(null);
+      setUploadInputKey((k) => k + 1);
+    } finally {
+      setFileHintValidating(false);
+    }
+  }
+
+  function handleResumenExcelSubmit(e) {
+    e.preventDefault();
+    if (!uploadFile) {
+      window.alert("Selecciona un archivo Excel o CSV exportado desde Loyverse.");
+      return;
+    }
+    handleImport({ file: uploadFile, reportHint: "daily_summary" });
+  }
+
   async function commitRate(dateStr) {
     const raw = drafts[dateStr] !== undefined ? drafts[dateStr] : rateDisplay(dateStr);
     const parsed = parseRateInput(raw);
@@ -596,229 +726,346 @@ export function LoyverseResumenVentas() {
     }
   }
 
+  const resumenSubBtn = (key, label) => (
+    <button
+      type="button"
+      onClick={() => setTopTab(key)}
+      className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+        topTab === key
+          ? "bg-zm-cream/70 border-zm-green/45 text-zm-sidebar shadow-sm"
+          : "bg-transparent border-transparent text-gray-600 hover:text-zm-sidebar hover:bg-zm-cream/40"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
-    <div className="px-4 pt-2 pb-6 space-y-3 w-full max-w-7xl">
-      <p className="text-[11px] text-gray-500 leading-snug">
-        USD arriba; Bs en naranja (USD × tasa del día). Costos netos = ventas netas
-        − beneficio bruto.
-      </p>
-      {err && (
-        <p className="text-sm text-red-600">{err}</p>
-      )}
-      {loading && (
-        <p className="text-sm text-gray-500">Cargando…</p>
-      )}
-      {!loading && rows.length === 0 && !err && (
-        <p className="text-sm text-gray-500">
-          No hay resúmenes importados. Usa «Ventas → Cargar reporte Ventas» y elije tipo
-          «Resumen de ventas» o detección automática.
-        </p>
-      )}
-      {rows.length > 0 && (
-        <>
-          <section className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 shadow-sm space-y-3">
-            <div className="flex flex-wrap items-center gap-2 min-w-0">
-              <button
-                type="button"
-                className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
-                title="Periodo anterior"
-                aria-label="Periodo anterior"
-                onClick={() => shiftRange(-1)}
-              >
-                ‹
-              </button>
-              <LoyversePorPagoDateRange
-                rangeStart={rangeStart}
-                rangeEnd={rangeEnd}
-                dataMinYmd={importDateBounds.min}
-                dataMaxYmd={importDateBounds.max}
-                onApplyRange={(startYmd, endYmd) => {
-                  setRangeStart(startYmd);
-                  setRangeEnd(endYmd);
-                }}
-              />
-              <button
-                type="button"
-                className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
-                title="Periodo siguiente"
-                aria-label="Periodo siguiente"
-                onClick={() => shiftRange(1)}
-              >
-                ›
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-              <SummaryTotalCard
-                title="Ventas brutas"
-                usdSum={totals.gross}
-                bsSum={totals.bsGross}
-                accent
-              />
-              <SummaryTotalCard
-                title="Ventas netas"
-                usdSum={totals.net}
-                bsSum={totals.bsNet}
-                accent={false}
-              />
-              <SummaryTotalCard
-                title="Beneficio bruto"
-                usdSum={totals.profit}
-                bsSum={totals.bsProfit}
-                accent={false}
-              />
-              <SummaryTotalCard
-                title="Costos netos"
-                usdSum={totals.cost}
-                bsSum={totals.bsCost}
-                accent={false}
-              />
-            </div>
-          </section>
-
-          <p className="text-[10px] text-gray-400">
-            Los totales arriba siguen solo el rango elegido. La tabla añade filas en
-            blanco hasta hoy si aún no llegó el Excel, para poder registrar la tasa
-            cada día.
-          </p>
-
-        <div className="overflow-x-auto border rounded-lg bg-white shadow-sm">
-          <table className="min-w-[920px] w-full text-sm">
-            <thead className="bg-gray-100 sticky top-0">
-              <tr>
-                <th className="text-left px-3 py-2">Fecha</th>
-                <th className="text-right px-3 py-2 whitespace-nowrap text-xs sm:text-sm font-medium">
-                  Tasa del día (Bs)
-                </th>
-                <th className="text-right px-3 py-2 whitespace-nowrap">
-                  <span className="block">Ventas brutas</span>
-                  <span className="block text-[10px] font-normal text-gray-500">
-                    (USD)
-                  </span>
-                </th>
-                <th className="text-right px-3 py-2 whitespace-nowrap">
-                  <span className="block">Ventas netas</span>
-                  <span className="block text-[10px] font-normal text-gray-500">
-                    (USD)
-                  </span>
-                </th>
-                <th className="text-right px-3 py-2 whitespace-nowrap">
-                  <span className="block">Beneficio bruto</span>
-                  <span className="block text-[10px] font-normal text-gray-500">
-                    (USD)
-                  </span>
-                </th>
-                <th className="text-right px-3 py-2 whitespace-nowrap">
-                  <span className="block">Costos netos</span>
-                  <span className="block text-[10px] font-normal text-gray-500">
-                    (USD)
-                  </span>
-                </th>
-                <th className="text-right px-3 py-2 text-xs font-normal text-gray-500">
-                  Lote
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {resumenDisplayDates.map((dateStr) => {
-                const r = rowsByDate.get(dateStr);
-                const isPlaceholder = !r;
-                const cn = r ? costosNetosUsd(r) : null;
-                const savedRate = dateStr ? ratesByDate[dateStr] : null;
-                const hasSavedRate =
-                  savedRate != null && Number.isFinite(Number(savedRate));
-                const isEditingRate = editingRateDate === dateStr;
-                const showRateInput =
-                  dateStr && (!hasSavedRate || isEditingRate);
-                const rateForUsdBs = effectiveRateForBsConversion(dateStr);
-
-                return (
-                  <tr
-                    key={r?.id ?? `placeholder-${dateStr}`}
-                    className={`border-t border-gray-100 hover:bg-gray-50 ${
-                      isPlaceholder ? "bg-gray-50/90" : ""
-                    }`}
-                  >
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {formatDateShort(dateStr)}
-                    </td>
-                    <td className="px-3 py-2 text-right align-middle">
-                      {dateStr && showRateInput ? (
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          placeholder="Bs"
-                          autoFocus={hasSavedRate && isEditingRate}
-                          aria-label={`Tasa del día en Bs para ${dateStr}`}
-                          className="w-full min-w-[6.5rem] max-w-[9rem] ml-auto rounded border border-gray-200 px-2 py-1 text-right text-sm tabular-nums focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          value={rateDisplay(dateStr)}
-                          onChange={(e) =>
-                            setDrafts((d) => ({
-                              ...d,
-                              [dateStr]: e.target.value,
-                            }))
-                          }
-                          onBlur={() => void commitRate(dateStr)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") e.currentTarget.blur();
-                          }}
-                        />
-                      ) : dateStr && hasSavedRate ? (
-                        <button
-                          type="button"
-                          className="w-full max-w-[9rem] ml-auto block rounded px-2 py-1.5 text-right text-sm font-medium tabular-nums text-gray-900 hover:bg-gray-100 border border-transparent hover:border-gray-200"
-                          title="Clic para editar la tasa"
-                          onClick={() => {
-                            setEditingRateDate(dateStr);
-                            setDrafts((d) => ({
-                              ...d,
-                              [dateStr]: String(savedRate),
-                            }));
-                          }}
-                        >
-                          {formatBs(savedRate)}
-                        </button>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <UsdDualCell
-                      usdValue={r?.gross_sales}
-                      rateBs={rateForUsdBs}
-                      variant="default"
-                    />
-                    <UsdDualCell
-                      usdValue={r?.net_sales}
-                      rateBs={rateForUsdBs}
-                      variant="emphasis"
-                    />
-                    <UsdDualCell
-                      usdValue={r?.gross_profit}
-                      rateBs={rateForUsdBs}
-                      variant="profit"
-                    />
-                    <UsdDualCell
-                      usdValue={cn}
-                      rateBs={rateForUsdBs}
-                      variant="cost"
-                    />
-                    <td className="px-3 py-2 text-right text-xs text-gray-400 font-mono">
-                      {r?.import_batch_id != null ? `#${r.import_batch_id}` : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+    <div className="w-full max-w-7xl font-zm">
+      <div className="flex items-center bg-zm-green px-4 sm:px-6 py-3 text-white shadow-sm rounded-b-xl">
+        <h1 className="text-sm sm:text-base font-semibold tracking-tight">
+          Resumen de ventas
+        </h1>
+      </div>
+      <div className="px-4 pt-3 pb-6 space-y-3">
+      <div className="border-b border-zm-green/20">
+        <div className="flex flex-wrap gap-1 py-1">
+          {resumenSubBtn("tabla", "Tabla resumen")}
+          {resumenSubBtn("historial", "Historial de cargas")}
         </div>
+      </div>
+
+      {topTab === "historial" ? (
+        <LoyverseImportBatchHistory
+          detectedFormatFilter="daily_summary"
+          refreshToken={historyRefresh}
+          preferredSelectBatchId={importResult?.data?.importBatchId ?? null}
+          onDeleted={() => void refreshFacts()}
+        />
+      ) : (
+        <>
+          {err && (
+            <p className="text-sm text-zm-red">{err}</p>
+          )}
+          {loading && (
+            <p className="text-sm text-gray-500">Cargando…</p>
+          )}
+          {!loading && rows.length === 0 && !err && (
+            <p className="text-sm text-gray-600">
+              No hay resúmenes importados. Usa la carga Excel junto al calendario o la pestaña
+              «Cargar reporte Ventas» para más opciones de tipo de archivo.
+            </p>
+          )}
+          {!loading && (
+            <>
+              <section className="rounded-xl border border-zm-green/20 bg-white p-3 sm:p-4 shadow-sm space-y-3">
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
+                    title="Periodo anterior"
+                    aria-label="Periodo anterior"
+                    onClick={() => shiftRange(-1)}
+                  >
+                    ‹
+                  </button>
+                  <LoyversePorPagoDateRange
+                    rangeStart={rangeStart}
+                    rangeEnd={rangeEnd}
+                    dataMinYmd={importDateBounds.min}
+                    dataMaxYmd={importDateBounds.max}
+                    onApplyRange={(startYmd, endYmd) => {
+                      setRangeStart(startYmd);
+                      setRangeEnd(endYmd);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
+                    title="Periodo siguiente"
+                    aria-label="Periodo siguiente"
+                    onClick={() => shiftRange(1)}
+                  >
+                    ›
+                  </button>
+
+                  <form
+                    onSubmit={handleResumenExcelSubmit}
+                    className="flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto sm:ml-auto sm:justify-end"
+                  >
+                    <label
+                      className={`cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40 ${
+                        fileHintValidating ? "pointer-events-none opacity-60" : ""
+                      }`}
+                    >
+                      <Upload
+                        className="h-4 w-4 shrink-0 opacity-90"
+                        aria-hidden
+                        strokeWidth={2.25}
+                      />
+                      <span>Seleccionar archivo</span>
+                      <input
+                        key={uploadInputKey}
+                        type="file"
+                        accept={LOYVERSE_UPLOAD_ACCEPT}
+                        className="sr-only"
+                        aria-label="Seleccionar archivo del reporte Resumen de ventas Loyverse"
+                        disabled={fileHintValidating}
+                        onChange={handleResumenFileSelected}
+                      />
+                    </label>
+                    {uploadFile && (
+                      <>
+                        <span
+                          className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[14rem] font-medium"
+                          title={uploadFile.name}
+                        >
+                          {uploadFile.name}
+                        </span>
+                        <button
+                          type="submit"
+                          disabled={importLoading || fileHintValidating}
+                          className="shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50"
+                        >
+                          {importLoading ? "Importando…" : "Importar"}
+                        </button>
+                      </>
+                    )}
+                  </form>
+                </div>
+
+                {importError && (
+                  <p className="text-sm text-zm-red">{importError}</p>
+                )}
+                {fileHintValidating && (
+                  <p className="text-xs text-gray-600">Validando archivo…</p>
+                )}
+                {fileHintError && (
+                  <p className="text-sm text-zm-red" role="alert">
+                    {fileHintError}
+                  </p>
+                )}
+                <p className="text-[11px] text-gray-500 leading-snug max-w-xl">
+                  El selector solo filtra por tipo de archivo (Excel/CSV). Aquí debe ser el
+                  export «Resumen de ventas» de Loyverse; el tipo de reporte se comprueba al
+                  elegir el archivo.
+                </p>
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+                  <SummaryTotalCard
+                    title="Ventas brutas"
+                    usdSum={totals.gross}
+                    bsSum={totals.bsGross}
+                    accent
+                  />
+                  <SummaryTotalCard
+                    title="Ventas netas"
+                    usdSum={totals.net}
+                    bsSum={totals.bsNet}
+                    accent={false}
+                  />
+                  <SummaryTotalCard
+                    title="Beneficio bruto"
+                    usdSum={totals.profit}
+                    bsSum={totals.bsProfit}
+                    accent={false}
+                  />
+                  <SummaryTotalCard
+                    title="Costos netos"
+                    usdSum={totals.cost}
+                    bsSum={totals.bsCost}
+                    accent={false}
+                  />
+                </div>
+              </section>
+
+              <div className="overflow-x-auto border border-zm-green/15 rounded-lg bg-white shadow-sm">
+                <table className="min-w-[920px] w-full text-sm">
+                  <thead className="bg-zm-cream/80 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-2">Fecha</th>
+                      <th className="text-right px-3 py-2 whitespace-nowrap text-xs sm:text-sm font-medium">
+                        Tasa del día (Bs)
+                      </th>
+                      <th className="text-right px-3 py-2 whitespace-nowrap">
+                        <span className="block">Ventas brutas</span>
+                        <span className="block text-[10px] font-normal text-gray-500">
+                          (USD)
+                        </span>
+                      </th>
+                      <th className="text-right px-3 py-2 whitespace-nowrap">
+                        <span className="block">Ventas netas</span>
+                        <span className="block text-[10px] font-normal text-gray-500">
+                          (USD)
+                        </span>
+                      </th>
+                      <th className="text-right px-3 py-2 whitespace-nowrap">
+                        <span className="block">Beneficio bruto</span>
+                        <span className="block text-[10px] font-normal text-gray-500">
+                          (USD)
+                        </span>
+                      </th>
+                      <th className="text-right px-3 py-2 whitespace-nowrap">
+                        <span className="block">Costos netos</span>
+                        <span className="block text-[10px] font-normal text-gray-500">
+                          (USD)
+                        </span>
+                      </th>
+                      <th className="text-right px-3 py-2 text-xs font-normal text-gray-500">
+                        Lote
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resumenDisplayDates.map((dateStr) => {
+                      const r = rowsByDate.get(dateStr);
+                      const isPlaceholder = !r;
+                      const cn = r ? costosNetosUsd(r) : null;
+                      const savedRate = dateStr ? ratesByDate[dateStr] : null;
+                      const hasSavedRate =
+                        savedRate != null && Number.isFinite(Number(savedRate));
+                      const isEditingRate = editingRateDate === dateStr;
+                      const showRateInput =
+                        dateStr && (!hasSavedRate || isEditingRate);
+                      const rateForUsdBs = effectiveRateForBsConversion(dateStr);
+                      const isNewFromUpload =
+                        highlightBatchId != null &&
+                        r?.import_batch_id != null &&
+                        Number(r.import_batch_id) === Number(highlightBatchId);
+
+                      return (
+                        <tr
+                          key={r?.id ?? `placeholder-${dateStr}`}
+                          className={`border-t border-gray-100 hover:bg-gray-50 ${
+                            isPlaceholder ? "bg-gray-50/90" : ""
+                          } ${
+                            isNewFromUpload
+                              ? "border-zm-green/10 bg-zm-yellow/30 hover:bg-zm-yellow/40"
+                              : ""
+                          }`}
+                        >
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {formatDateShort(dateStr)}
+                          </td>
+                          <td className="px-3 py-2 text-right align-middle">
+                            {dateStr && showRateInput ? (
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                placeholder="Bs"
+                                autoFocus={hasSavedRate && isEditingRate}
+                                aria-label={`Tasa del día en Bs para ${dateStr}`}
+                                className="w-full min-w-[6.5rem] max-w-[9rem] ml-auto rounded border border-gray-200 px-2 py-1 text-right text-sm tabular-nums focus:border-zm-green focus:outline-none focus:ring-1 focus:ring-zm-green/50"
+                                value={rateDisplay(dateStr)}
+                                onChange={(e) =>
+                                  setDrafts((d) => ({
+                                    ...d,
+                                    [dateStr]: e.target.value,
+                                  }))
+                                }
+                                onBlur={() => void commitRate(dateStr)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") e.currentTarget.blur();
+                                }}
+                              />
+                            ) : dateStr && hasSavedRate ? (
+                              <button
+                                type="button"
+                                className="w-full max-w-[9rem] ml-auto block rounded px-2 py-1.5 text-right text-sm font-medium tabular-nums text-gray-900 hover:bg-gray-100 border border-transparent hover:border-gray-200"
+                                title="Clic para editar la tasa"
+                                onClick={() => {
+                                  setEditingRateDate(dateStr);
+                                  setDrafts((d) => ({
+                                    ...d,
+                                    [dateStr]: String(savedRate),
+                                  }));
+                                }}
+                              >
+                                {formatBs(savedRate)}
+                              </button>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <UsdDualCell
+                            usdValue={r?.gross_sales}
+                            rateBs={rateForUsdBs}
+                            variant="default"
+                          />
+                          <UsdDualCell
+                            usdValue={r?.net_sales}
+                            rateBs={rateForUsdBs}
+                            variant="emphasis"
+                          />
+                          <UsdDualCell
+                            usdValue={r?.gross_profit}
+                            rateBs={rateForUsdBs}
+                            variant="profit"
+                          />
+                          <UsdDualCell
+                            usdValue={cn}
+                            rateBs={rateForUsdBs}
+                            variant="cost"
+                          />
+                          <td className="px-3 py-2 text-right text-xs text-gray-400 font-mono">
+                            {r?.import_batch_id != null
+                              ? `#${r.import_batch_id}`
+                              : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </>
       )}
+      </div>
     </div>
   );
 }
 
 /** Ventas por tipo de pago — misma estructura que Loyverse Back Office + Excel. */
-export function LoyverseVentasPorPago() {
+export function LoyverseVentasPorPago({
+  highlightBatchId = null,
+  onHighlightBatchIdChange,
+} = {}) {
+  const [topTab, setTopTab] = useState("tabla");
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadInputKey, setUploadInputKey] = useState(0);
+  const [fileHintError, setFileHintError] = useState(null);
+  const [fileHintValidating, setFileHintValidating] = useState(false);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
+
+  const {
+    loading: importLoading,
+    error: importError,
+    result: importResult,
+    handleImport,
+  } = useLoyverseImport();
+
   const [rows, setRows] = useState([]);
   const [ratesByDate, setRatesByDate] = useState({});
   const [loading, setLoading] = useState(true);
@@ -827,55 +1074,93 @@ export function LoyverseVentasPorPago() {
   const [rangeEnd, setRangeEnd] = useState("");
   const [rangeBootstrapped, setRangeBootstrapped] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
+  const refreshFacts = useCallback(async () => {
+    try {
+      setLoading(true);
+      setErr(null);
+      const res = await fetchLoyverseFactsByTypes(["payment_breakdown"], {
+        limit: 15000,
+      });
+      let ratesData = [];
       try {
-        setLoading(true);
-        setErr(null);
-        const res = await fetchLoyverseFactsByTypes(["payment_breakdown"], {
-          limit: 15000,
-        });
-        let ratesData = [];
-        try {
-          const ratesRes = await fetchLoyverseDailyRates();
-          ratesData = ratesRes.data || [];
-        } catch {
-          ratesData = [];
-        }
-        if (cancelled) return;
-        setRows(res.data || []);
-        const map = {};
-        for (const row of ratesData) {
-          const dk = String(row.business_date || "").slice(0, 10);
-          if (dk && row.rate_bs != null) {
-            map[dk] = Number(row.rate_bs);
-          }
-        }
-        setRatesByDate(map);
-      } catch (e) {
-        if (!cancelled) setErr(e.message);
-      } finally {
-        if (!cancelled) setLoading(false);
+        const ratesRes = await fetchLoyverseDailyRates();
+        ratesData = ratesRes.data || [];
+      } catch {
+        ratesData = [];
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      const data = res.data || [];
+      setRows(data);
+      const map = {};
+      for (const row of ratesData) {
+        const dk = String(row.business_date || "").slice(0, 10);
+        if (dk && row.rate_bs != null) {
+          map[dk] = Number(row.rate_bs);
+        }
+      }
+      setRatesByDate(map);
+      return data;
+    } catch (e) {
+      setErr(e.message);
+      return null;
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (rows.length === 0 || rangeBootstrapped) return;
-    const uniq = [
-      ...new Set(rows.map((r) => String(r.business_date || "").slice(0, 10))),
-    ]
-      .filter(Boolean)
-      .sort();
-    if (uniq.length === 0) return;
-    setRangeStart(uniq[0]);
-    setRangeEnd(uniq[uniq.length - 1]);
+    refreshFacts();
+  }, [refreshFacts]);
+
+  useEffect(() => {
+    if (!importResult?.success || importResult?.data?.importBatchId == null) {
+      return;
+    }
+    const batchId = importResult.data.importBatchId;
+    onHighlightBatchIdChange?.(batchId);
+    setHistoryRefresh((n) => n + 1);
+    setUploadFile(null);
+    setUploadInputKey((k) => k + 1);
+
+    let cancelled = false;
+    void (async () => {
+      const data = await refreshFacts();
+      if (cancelled || !data) return;
+      const span = dateRangeForImportedLoyverseBatch(data, batchId);
+      if (span) {
+        setRangeStart(span.start);
+        setRangeEnd(span.end);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    importResult?.data?.importBatchId,
+    importResult?.success,
+    onHighlightBatchIdChange,
+    refreshFacts,
+  ]);
+
+  useEffect(() => {
+    if (rangeBootstrapped || loading) return;
+    if (rows.length > 0) {
+      const uniq = [
+        ...new Set(rows.map((r) => String(r.business_date || "").slice(0, 10))),
+      ]
+        .filter(Boolean)
+        .sort();
+      if (uniq.length === 0) return;
+      setRangeStart(uniq[0]);
+      setRangeEnd(uniq[uniq.length - 1]);
+      setRangeBootstrapped(true);
+      return;
+    }
+    const t = localTodayYmd();
+    setRangeStart(t);
+    setRangeEnd(t);
     setRangeBootstrapped(true);
-  }, [rows, rangeBootstrapped]);
+  }, [rows, rangeBootstrapped, loading]);
 
   const { dataMinYmd, dataMaxYmd } = useMemo(() => {
     const uniq = [
@@ -896,6 +1181,19 @@ export function LoyverseVentasPorPago() {
       return d && d >= lo && d <= hi;
     });
   }, [rows, rangeStart, rangeEnd]);
+
+  const pagoHighlightKeys = useMemo(() => {
+    if (highlightBatchId == null) return new Set();
+    const s = new Set();
+    const hid = Number(highlightBatchId);
+    for (const r of filteredRows) {
+      if (Number(r.import_batch_id) !== hid) continue;
+      const d = String(r.business_date || "").slice(0, 10);
+      const pm = String(r.payment_method || "desconocido");
+      s.add(`${d}|${pm}`);
+    }
+    return s;
+  }, [filteredRows, highlightBatchId]);
 
   const { paymentDays, grandTotal, rowsMissingRate } = useMemo(() => {
     const dateToPm = new Map();
@@ -1018,6 +1316,46 @@ export function LoyverseVentasPorPago() {
     };
   }, [filteredRows, ratesByDate]);
 
+  async function handlePagoFileSelected(e) {
+    const file = e.target.files?.[0] ?? null;
+    setFileHintError(null);
+    if (!file) {
+      setUploadFile(null);
+      return;
+    }
+    setFileHintValidating(true);
+    try {
+      const v = await validateLoyverseReportHint({
+        file,
+        reportHint: "by_payment",
+      });
+      if (!v.ok) {
+        setFileHintError(
+          v.message || "El archivo no corresponde a ventas por tipo de pago."
+        );
+        setUploadFile(null);
+        setUploadInputKey((k) => k + 1);
+        return;
+      }
+      setUploadFile(file);
+    } catch (err) {
+      setFileHintError(err.message || "No se pudo validar el archivo.");
+      setUploadFile(null);
+      setUploadInputKey((k) => k + 1);
+    } finally {
+      setFileHintValidating(false);
+    }
+  }
+
+  function handlePagoExcelSubmit(e) {
+    e.preventDefault();
+    if (!uploadFile) {
+      window.alert("Selecciona un archivo Excel o CSV exportado desde Loyverse.");
+      return;
+    }
+    handleImport({ file: uploadFile, reportHint: "by_payment" });
+  }
+
   function shiftRange(direction) {
     if (!rangeStart || !rangeEnd) return;
     const step = daysInclusive(rangeStart, rangeEnd);
@@ -1088,69 +1426,166 @@ export function LoyverseVentasPorPago() {
     URL.revokeObjectURL(a.href);
   }
 
-  return (
-    <div className="px-4 pt-2 pb-8 space-y-3 w-full max-w-6xl">
-      {err && <p className="text-sm text-red-600">{err}</p>}
-      {loading && <p className="text-sm text-gray-500">Cargando…</p>}
-      {!loading && rows.length === 0 && !err && (
-        <p className="text-sm text-gray-500">
-          No hay datos por tipo de pago. Importa desde «Cargar reporte Ventas» con tipo
-          «Ventas por tipo de pago» o detección automática.
-        </p>
-      )}
-      {rows.length > 0 && (
-        <>
-          <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div className="flex items-center gap-2 bg-zm-green px-4 py-3 text-white rounded-t-xl">
-              <h2 className="text-sm font-semibold tracking-tight">
-                Ventas por tipo de pago
-              </h2>
-            </div>
-            <div className="p-3 sm:p-4 space-y-3 border-b border-gray-100">
-              <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2 min-w-0">
-                  <button
-                    type="button"
-                    className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
-                    title="Periodo anterior"
-                    aria-label="Periodo anterior"
-                    onClick={() => shiftRange(-1)}
-                  >
-                    ‹
-                  </button>
-                  <LoyversePorPagoDateRange
-                    rangeStart={rangeStart}
-                    rangeEnd={rangeEnd}
-                    dataMinYmd={dataMinYmd}
-                    dataMaxYmd={dataMaxYmd}
-                    onApplyRange={(startYmd, endYmd) => {
-                      setRangeStart(startYmd);
-                      setRangeEnd(endYmd);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
-                    title="Periodo siguiente"
-                    aria-label="Periodo siguiente"
-                    onClick={() => shiftRange(1)}
-                  >
-                    ›
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-2 shrink-0">
-                  <button
-                    type="button"
-                    className="rounded-lg border border-zm-green/40 bg-white px-3 py-1.5 text-xs font-semibold text-zm-green hover:bg-zm-green/5"
-                    onClick={exportCsv}
-                  >
-                    EXPORTAR
-                  </button>
-                </div>
-              </div>
-            </div>
+  const pagoSubBtn = (key, label) => (
+    <button
+      type="button"
+      onClick={() => setTopTab(key)}
+      className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+        topTab === key
+          ? "bg-zm-cream/70 border-zm-green/45 text-zm-sidebar shadow-sm"
+          : "bg-transparent border-transparent text-gray-600 hover:text-zm-sidebar hover:bg-zm-cream/40"
+      }`}
+    >
+      {label}
+    </button>
+  );
 
-            <div className="w-full max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+  return (
+    <div className="w-full font-zm">
+      {/* Same alignment as Resumen de ventas: max-width without mx-auto (flush left in main). */}
+      <div className="w-full max-w-7xl">
+        <div className="flex items-center bg-zm-green px-4 sm:px-6 py-3 text-white shadow-sm rounded-b-xl">
+          <h1 className="text-sm sm:text-base font-semibold tracking-tight">
+            Ventas por tipo de pago
+          </h1>
+        </div>
+        <div className="px-4 pt-3 pb-2 space-y-3">
+          <div className="border-b border-zm-green/20">
+            <div className="flex flex-wrap gap-1 py-1">
+              {pagoSubBtn("tabla", "Tabla")}
+              {pagoSubBtn("historial", "Historial de cargas")}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {topTab === "historial" ? (
+        <div className="w-full max-w-[1600px] px-4 sm:px-6 pb-8 pt-1">
+          <LoyverseImportBatchHistory
+            detectedFormatFilter="by_payment"
+            refreshToken={historyRefresh}
+            preferredSelectBatchId={importResult?.data?.importBatchId ?? null}
+            onDeleted={() => void refreshFacts()}
+          />
+        </div>
+      ) : (
+        <div className="w-full max-w-7xl px-4 pt-1 pb-8 space-y-3">
+          {err && <p className="text-sm text-zm-red">{err}</p>}
+          {loading && <p className="text-sm text-gray-500">Cargando…</p>}
+          {!loading && rows.length === 0 && !err && (
+            <p className="text-sm text-gray-600">
+              No hay datos por tipo de pago. Usa «Seleccionar archivo» junto al calendario o
+              «Cargar reporte Ventas» con tipo «Ventas por tipo de pago».
+            </p>
+          )}
+          {!loading && (
+            <>
+              <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
+                <div className="p-3 sm:p-4 space-y-3 border-b border-gray-100">
+                  <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
+                        title="Periodo anterior"
+                        aria-label="Periodo anterior"
+                        onClick={() => shiftRange(-1)}
+                      >
+                        ‹
+                      </button>
+                      <LoyversePorPagoDateRange
+                        rangeStart={rangeStart}
+                        rangeEnd={rangeEnd}
+                        dataMinYmd={dataMinYmd}
+                        dataMaxYmd={dataMaxYmd}
+                        onApplyRange={(startYmd, endYmd) => {
+                          setRangeStart(startYmd);
+                          setRangeEnd(endYmd);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
+                        title="Periodo siguiente"
+                        aria-label="Periodo siguiente"
+                        onClick={() => shiftRange(1)}
+                      >
+                        ›
+                      </button>
+
+                      <form
+                        onSubmit={handlePagoExcelSubmit}
+                        className="flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto lg:ml-auto"
+                      >
+                        <label
+                          className={`cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40 ${
+                            fileHintValidating ? "pointer-events-none opacity-60" : ""
+                          }`}
+                        >
+                          <Upload
+                            className="h-4 w-4 shrink-0 opacity-90"
+                            aria-hidden
+                            strokeWidth={2.25}
+                          />
+                          <span>Seleccionar archivo</span>
+                          <input
+                            key={uploadInputKey}
+                            type="file"
+                            accept={LOYVERSE_UPLOAD_ACCEPT}
+                            className="sr-only"
+                            aria-label="Seleccionar archivo del reporte Ventas por tipo de pago Loyverse"
+                            disabled={fileHintValidating}
+                            onChange={handlePagoFileSelected}
+                          />
+                        </label>
+                        {uploadFile && (
+                          <>
+                            <span
+                              className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[14rem] font-medium"
+                              title={uploadFile.name}
+                            >
+                              {uploadFile.name}
+                            </span>
+                            <button
+                              type="submit"
+                              disabled={importLoading || fileHintValidating}
+                              className="shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50"
+                            >
+                              {importLoading ? "Importando…" : "Importar"}
+                            </button>
+                          </>
+                        )}
+                      </form>
+                    </div>
+                    <div className="flex flex-wrap gap-2 shrink-0 lg:justify-end">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-zm-green/40 bg-white px-3 py-1.5 text-xs font-semibold text-zm-green hover:bg-zm-green/5"
+                        onClick={exportCsv}
+                      >
+                        EXPORTAR
+                      </button>
+                    </div>
+                  </div>
+                  {importError && (
+                    <p className="text-sm text-zm-red">{importError}</p>
+                  )}
+                  {fileHintValidating && (
+                    <p className="text-xs text-gray-600">Validando archivo…</p>
+                  )}
+                  {fileHintError && (
+                    <p className="text-sm text-zm-red" role="alert">
+                      {fileHintError}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-gray-500 leading-snug max-w-xl">
+                    El selector solo filtra por tipo de archivo (Excel/CSV). Aquí debe ser el
+                    export «Ventas por tipo de pago» de Loyverse; el tipo de reporte se
+                    comprueba al elegir el archivo.
+                  </p>
+                </div>
+
+            <div className="w-full max-w-full overflow-x-auto rounded-b-xl [-webkit-overflow-scrolling:touch]">
               <table className="w-full min-w-[800px] max-w-full table-fixed border-collapse text-sm sm:text-base">
                 <colgroup>
                   <col className="w-[11%]" />
@@ -1225,12 +1660,31 @@ export function LoyverseVentasPorPago() {
                   </tr>
                 </thead>
                 <tbody>
+                  {paymentDays.length === 0 ? (
+                    <tr className="border-t border-gray-100">
+                      <td
+                        colSpan={8}
+                        className="min-h-[16rem] px-4 py-14 align-middle text-center text-sm leading-relaxed text-gray-600 bg-gray-50/50"
+                      >
+                        No hay datos en este rango de fechas. Amplía el período en el
+                        calendario o usa «Todo el historial» si hay datos importados.
+                      </td>
+                    </tr>
+                  ) : null}
                   {paymentDays.map((day) => (
                     <Fragment key={day.dateYmd}>
-                      {day.methods.map((r, idx) => (
+                      {day.methods.map((r, idx) => {
+                        const rowHighlight = pagoHighlightKeys.has(
+                          `${day.dateYmd}|${r.payment_method}`
+                        );
+                        return (
                         <tr
                           key={`${day.dateYmd}-${r.payment_method}`}
-                          className="border-t border-gray-100 hover:bg-gray-50"
+                          className={`border-t border-gray-100 hover:bg-gray-50 ${
+                            rowHighlight
+                              ? "border-zm-green/10 bg-zm-yellow/30 hover:bg-zm-yellow/40"
+                              : ""
+                          }`}
                         >
                           {idx === 0 && (
                             <td
@@ -1290,7 +1744,8 @@ export function LoyverseVentasPorPago() {
                             tightPad
                           />
                         </tr>
-                      ))}
+                        );
+                      })}
                       <tr className="border-t border-gray-200 bg-zm-cream/70 text-gray-900">
                         <td
                           colSpan={3}
@@ -1383,7 +1838,9 @@ export function LoyverseVentasPorPago() {
               </span>
             )}
           </p>
-        </>
+            </>
+          )}
+        </div>
       )}
     </div>
   );

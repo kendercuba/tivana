@@ -229,18 +229,29 @@ export async function listLoyverseImportBatches({ limit = 100 } = {}) {
   const { rows } = await pool.query(
     `
     SELECT
-      id,
-      import_type,
-      bank_account_id,
-      original_filename,
-      rows_in_file,
-      rows_inserted,
-      rows_skipped_duplicate,
-      loyverse_detected_format,
-      created_at
-    FROM finance_import_batches
-    WHERE import_type = 'loyverse'
-    ORDER BY created_at DESC
+      b.id,
+      b.import_type,
+      b.bank_account_id,
+      b.original_filename,
+      b.rows_in_file,
+      b.rows_inserted,
+      b.rows_skipped_duplicate,
+      b.loyverse_detected_format,
+      b.created_at,
+      dr.data_date_min,
+      dr.data_date_max
+    FROM finance_import_batches b
+    LEFT JOIN (
+      SELECT
+        import_batch_id,
+        MIN(business_date)::text AS data_date_min,
+        MAX(business_date)::text AS data_date_max
+      FROM finance_loyverse_facts
+      WHERE import_batch_id IS NOT NULL
+      GROUP BY import_batch_id
+    ) dr ON dr.import_batch_id = b.id
+    WHERE b.import_type = 'loyverse'
+    ORDER BY b.created_at DESC
     LIMIT $1
     `,
     [safeLimit]

@@ -1,13 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import {
-  Building2,
-  Home,
-  LayoutDashboard,
-  PieChart,
-  Store,
-  Upload,
-} from "lucide-react";
+import { Building2, Home, LayoutDashboard, PieChart, Store } from "lucide-react";
 
 const ZM_FINANCE_BASE = "/zonamarket/admin/finance";
 const LOYVERSE_PATH = `${ZM_FINANCE_BASE}/loyverse`;
@@ -41,23 +34,11 @@ function financeNavClass({ isActive }) {
   ].join(" ");
 }
 
-const BANK_CARGAR_EXCEL = `${ZM_FINANCE_BASE}/cargar-excel`;
 const BANK_CUENTAS_SECTION = `${ZM_FINANCE_BASE}/cuentas`;
-const BANK_CATEGORIAS = `${ZM_FINANCE_BASE}/categorias`;
-const BANK_REGLAS = `${ZM_FINANCE_BASE}/reglas`;
 
-const CUENTAS_NAV_PATHS = new Set([
-  BANK_CUENTAS_SECTION,
-  BANK_CATEGORIAS,
-  BANK_REGLAS,
-]);
-
-/** Solo rutas de banco (Loyverse va aparte, mismo nivel en el menú). */
+/** Solo hub de cuentas (Loyverse va aparte, mismo nivel en el menú). */
 function isUnderZmBanking(pathname) {
-  return (
-    pathname === BANK_CARGAR_EXCEL ||
-    CUENTAS_NAV_PATHS.has(pathname)
-  );
+  return pathname === BANK_CUENTAS_SECTION;
 }
 
 const STORE_LINKS = [
@@ -89,9 +70,7 @@ export default function ZonaMarketAdminLayout() {
   const lvTab = lv.get("tab") === "compras" ? "compras" : "ventas";
   const lvVentasSub = (() => {
     const s = lv.get("ventasSub");
-    if (s === "cargar") return "cargar";
     if (s === "pago") return "pago";
-    if (s === "resumen") return "resumen";
     return "resumen";
   })();
 
@@ -274,27 +253,6 @@ export default function ZonaMarketAdminLayout() {
                         Cuentas
                       </NavLink>
                     </li>
-                    <li>
-                      <NavLink to={BANK_CATEGORIAS} className={financeNavClass}>
-                        Categorías
-                      </NavLink>
-                    </li>
-                    <li>
-                      <NavLink to={BANK_REGLAS} className={financeNavClass}>
-                        Reglas
-                      </NavLink>
-                    </li>
-                    <li>
-                      <NavLink
-                        to={BANK_CARGAR_EXCEL}
-                        className={(p) =>
-                          cn(financeNavClass(p), "flex items-center gap-2")
-                        }
-                      >
-                        <Upload className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
-                        Cargar estado de cuenta
-                      </NavLink>
-                    </li>
                   </ul>
                 )}
               </div>
@@ -417,22 +375,6 @@ export default function ZonaMarketAdminLayout() {
                         </ul>
                       )}
                     </li>
-                    <li>
-                      <Link
-                        to={`${LOYVERSE_PATH}${loyverseQs("ventas", "cargar")}`}
-                        className={cn(
-                          "flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors",
-                          onLoyverseRoute &&
-                            lvTab === "ventas" &&
-                            lvVentasSub === "cargar"
-                            ? "font-semibold text-white bg-zm-red/35 ring-1 ring-zm-yellow/50"
-                            : "text-white/90 hover:bg-white/10 hover:text-white"
-                        )}
-                      >
-                        <Upload className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
-                        Cargar reporte Ventas
-                      </Link>
-                    </li>
                   </ul>
                 )}
               </div>
@@ -495,30 +437,6 @@ export default function ZonaMarketAdminLayout() {
               >
                 Cuentas
               </NavLink>
-              <NavLink
-                to={BANK_CATEGORIAS}
-                className={(p) => cn(financeNavClass(p), "ml-3")}
-                onClick={() => setFinanceFlyoutOpen(false)}
-              >
-                Categorías
-              </NavLink>
-              <NavLink
-                to={BANK_REGLAS}
-                className={(p) => cn(financeNavClass(p), "ml-3")}
-                onClick={() => setFinanceFlyoutOpen(false)}
-              >
-                Reglas
-              </NavLink>
-              <NavLink
-                to={BANK_CARGAR_EXCEL}
-                className={(p) =>
-                  cn(financeNavClass(p), "ml-3 flex items-center gap-2")
-                }
-                onClick={() => setFinanceFlyoutOpen(false)}
-              >
-                <Upload className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
-                Cargar estado de cuenta
-              </NavLink>
 
               <p className="mt-3 px-2 text-[10px] font-semibold uppercase tracking-wider text-zm-yellow/95">
                 Loyverse
@@ -568,22 +486,6 @@ export default function ZonaMarketAdminLayout() {
                 onClick={() => setFinanceFlyoutOpen(false)}
               >
                 Resumen de compras
-              </Link>
-              <Link
-                to={`${LOYVERSE_PATH}${loyverseQs("ventas", "cargar")}`}
-                className={cn(
-                  financeNavClass({
-                    isActive:
-                      onLoyverseRoute &&
-                      lvTab === "ventas" &&
-                      lvVentasSub === "cargar",
-                  }),
-                  "flex items-center gap-2"
-                )}
-                onClick={() => setFinanceFlyoutOpen(false)}
-              >
-                <Upload className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
-                Cargar reporte Ventas
               </Link>
             </nav>
           </div>

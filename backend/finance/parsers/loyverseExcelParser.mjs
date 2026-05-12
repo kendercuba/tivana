@@ -11,6 +11,101 @@ import XLSX from "xlsx";
 const PAYMENT_FILENAME_RANGE_ERROR_ES =
   "No se puede cargar este archivo: el nombre incluye dos fechas distintas (rango). Sube el reporte de ventas por tipo de pago de un solo día. Si el nombre repite el mismo día dos veces (por ejemplo 2026-05-01-2026-05-01), sí se acepta.";
 
+const LOYVERSE_STRICT_HINT_DAILY_GOT_PAYMENT_ES =
+  "Este archivo corresponde al reporte «Ventas por tipo de pago». Aquí solo puedes cargar el export «Resumen de ventas» (diario: brutas, netas, beneficio…). Usa la pestaña «Ventas por tipo de pago» o exporta el archivo correcto desde Loyverse Back Office.";
+
+const LOYVERSE_STRICT_HINT_DAILY_GOT_ITEM_ES =
+  "Este archivo parece ser «Ventas por artículo». En esta pantalla solo se acepta el Resumen de ventas diarias.";
+
+const LOYVERSE_STRICT_HINT_PAYMENT_GOT_DAILY_ES =
+  "Este archivo es el «Resumen de ventas» (diario). Aquí solo puedes cargar el export «Ventas por tipo de pago». Usa la pestaña «Resumen de ventas» o el archivo correcto desde Loyverse.";
+
+const LOYVERSE_STRICT_HINT_PAYMENT_GOT_ITEM_ES =
+  "Este archivo parece ser ventas por artículo. Aquí solo se acepta «Ventas por tipo de pago».";
+
+const LOYVERSE_STRICT_HINT_ITEM_GOT_DAILY_ES =
+  "Este archivo es el Resumen de ventas diarias. Para ventas por artículo elige ese export en Loyverse Back Office.";
+
+const LOYVERSE_STRICT_HINT_ITEM_GOT_PAYMENT_ES =
+  "Este archivo es ventas por tipo de pago. Para ventas por artículo elige ese export en Loyverse Back Office.";
+
+/**
+ * Best-effort shape from workbook headers (before forcing reportHint).
+ * @returns {"daily_summary"|"by_payment"|"by_item"|"unknown"}
+ */
+export function inferLoyverseContentFormatFromWorkbook(workbook) {
+  let sawPayment = false;
+  let sawItem = false;
+  let sawDaily = false;
+  let anyHeader = false;
+
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(worksheet, {
+      header: 1,
+      defval: "",
+      raw: false,
+    });
+    const headerIndex = findHeaderRowIndex(rows);
+    if (headerIndex === -1) continue;
+    anyHeader = true;
+    const headers = rows[headerIndex].map((h) => normalizeHeader(h));
+    const fromContent = classifyLoyverseReportFromHeaders(headers, sheetName);
+    if (fromContent === "by_payment") {
+      sawPayment = true;
+      continue;
+    }
+    if (fromContent === "daily_summary") {
+      sawDaily = true;
+      continue;
+    }
+    if (fromContent === "by_item") {
+      sawItem = true;
+      continue;
+    }
+    const df = detectFormat(headers, sheetName);
+    if (df === "by_payment") sawPayment = true;
+    else if (df === "by_item") sawItem = true;
+    else sawDaily = true;
+  }
+
+  if (!anyHeader) return "unknown";
+  if (sawPayment) return "by_payment";
+  if (sawItem) return "by_item";
+  if (sawDaily) return "daily_summary";
+  return "unknown";
+}
+
+/**
+ * When reportHint is strict (not auto), reject obvious mismatches between hint and inferred shape.
+ * @returns {string|null} User-facing Spanish error, or null if OK / skipped.
+ */
+export function validateStrictReportHintAgainstContentShape(
+  reportHint,
+  contentShape
+) {
+  const hint = String(reportHint || "").trim() || "auto";
+  if (hint === "auto") return null;
+  if (!contentShape || contentShape === "unknown") return null;
+
+  if (hint === "daily_summary") {
+    if (contentShape === "by_payment") return LOYVERSE_STRICT_HINT_DAILY_GOT_PAYMENT_ES;
+    if (contentShape === "by_item") return LOYVERSE_STRICT_HINT_DAILY_GOT_ITEM_ES;
+    return null;
+  }
+  if (hint === "by_payment") {
+    if (contentShape === "daily_summary") return LOYVERSE_STRICT_HINT_PAYMENT_GOT_DAILY_ES;
+    if (contentShape === "by_item") return LOYVERSE_STRICT_HINT_PAYMENT_GOT_ITEM_ES;
+    return null;
+  }
+  if (hint === "by_item") {
+    if (contentShape === "daily_summary") return LOYVERSE_STRICT_HINT_ITEM_GOT_DAILY_ES;
+    if (contentShape === "by_payment") return LOYVERSE_STRICT_HINT_ITEM_GOT_PAYMENT_ES;
+    return null;
+  }
+  return null;
+}
+
 /**
  * @returns {{ facts: Array, detectedFormat: string, parseError?: string }}
  */
@@ -20,6 +115,20 @@ export function parseLoyverseExcel(
   sourceFileName = ""
 ) {
   const workbook = XLSX.readFile(filePath);
+  const hintTrim = String(reportHint || "").trim() || "auto";
+  const contentShape = inferLoyverseContentFormatFromWorkbook(workbook);
+  const mismatchErr = validateStrictReportHintAgainstContentShape(
+    hintTrim,
+    contentShape
+  );
+  if (mismatchErr) {
+    return {
+      facts: [],
+      detectedFormat: contentShape !== "unknown" ? contentShape : "unknown",
+      parseError: mismatchErr,
+    };
+  }
+
   const out = [];
   let detectedFormat = "unknown";
   const baseName =

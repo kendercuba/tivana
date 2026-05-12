@@ -66,12 +66,16 @@ function FinanceImportarLegacyRedirect() {
     );
   }
   if (tab === 'categorias') {
-    return <Navigate to="/admin/finance/categorias" replace />;
+    return (
+      <Navigate to="/admin/finance/cuentas?cuentasSub=categorias" replace />
+    );
   }
   if (tab === 'reglas') {
-    return <Navigate to="/admin/finance/reglas" replace />;
+    return <Navigate to="/admin/finance/cuentas?cuentasSub=reglas" replace />;
   }
-  return <Navigate to="/admin/finance/cargar-excel" replace />;
+  return (
+    <Navigate to="/admin/finance/cuentas?cuentasSub=movimientos" replace />
+  );
 }
 
 function App() {
@@ -120,7 +124,9 @@ function App() {
       />
       <Route
         path="/admin/finance/bank-import"
-        element={<Navigate to="/admin/finance/cargar-excel" replace />}
+        element={
+          <Navigate to="/admin/finance/cuentas?cuentasSub=movimientos" replace />
+        }
       />
       <Route
         path="/admin/finance/loyverse-import"

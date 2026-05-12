@@ -2,7 +2,12 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import XLSX from "xlsx";
 
+import {
+  inferLoyverseContentFormatFromWorkbook,
+  validateStrictReportHintAgainstContentShape,
+} from "../../finance/parsers/loyverseExcelParser.mjs";
 import {
   importLoyverseExcel,
   listLoyverseImportBatches,
@@ -138,6 +143,54 @@ router.put("/daily-rates/:date", async (req, res) => {
       success: false,
       message: error.message || "Error guardando la tasa del día.",
     });
+  }
+});
+
+/**
+ * Checks strict reportHint vs inferred content (same logic as import).
+ * Deletes the uploaded temp file after reading; does not persist data.
+ */
+router.post("/validate-report-hint", upload.single("file"), async (req, res) => {
+  const tempPath = req.file?.path;
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Debes elegir un archivo Excel o CSV.",
+      });
+    }
+
+    const workbook = XLSX.readFile(tempPath);
+    const contentShape = inferLoyverseContentFormatFromWorkbook(workbook);
+    const reportHint = String(req.body.reportHint || "auto").trim() || "auto";
+    const mismatchError = validateStrictReportHintAgainstContentShape(
+      reportHint,
+      contentShape
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        contentShape,
+        ok: mismatchError == null,
+        message: mismatchError ?? null,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error validando tipo de reporte Loyverse:", error);
+    return res.status(500).json({
+      success: false,
+      message: "No se pudo revisar el archivo. Comprueba que sea un Excel o CSV válido.",
+      error: error.message,
+    });
+  } finally {
+    if (tempPath && fs.existsSync(tempPath)) {
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+        /* ignore */
+      }
+    }
   }
 });
 
