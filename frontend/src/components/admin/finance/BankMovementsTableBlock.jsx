@@ -225,34 +225,14 @@ const COMFY_COL_WEIGHT = {
   transaction_code: 0.75,
   transaction_type: 0.85,
   operation_type: 0.95,
-  /** Más compacta en pantallas anchas (el tope real lo da maxWidth en col/celdas). */
-  description: 1.55,
+  /** Extra width vs debe/haber/saldo (más texto largo). */
+  description: 2.4,
   reference: 1.15,
-  debit_bs: 1.35,
-  credit_bs: 1.35,
-  balance_bs: 1.35,
+  debit_bs: 1.0,
+  credit_bs: 1.0,
+  balance_bs: 1.0,
   category: 1.05,
 };
-
-/**
- * Anchos mínimos por columna (vista cómoda) para evitar solapamiento en móvil/tablet:
- * la tabla usa `table-auto` + scroll horizontal cuando el viewport es más estrecho.
- */
-const COMFY_COL_MIN_PX = {
-  movement_date: 100,
-  transaction_code: 88,
-  transaction_type: 108,
-  operation_type: 124,
-  description: 240,
-  reference: 112,
-  debit_bs: 108,
-  credit_bs: 108,
-  balance_bs: 108,
-  category: 152,
-};
-
-/** Tope de ancho para «Descripción» en vista cómoda (compacto en desktop, fluido en móvil). */
-const COMFY_DESC_MAX = "min(26rem, calc(100vw - 2rem))";
 
 /** Misma idea que el padding horizontal de las celdas en vista cómoda (tbody). */
 function comfyToolbarCellPaddingClass(columnId) {
@@ -383,8 +363,8 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
 ) {
   const comfy = appearance === "comfortable";
   const sortBtnClass =
-    "inline-flex items-center gap-1 font-semibold hover:text-blue-700 " +
-    (comfy ? "text-slate-800" : "text-gray-700");
+    "inline-flex items-center gap-1 font-semibold hover:text-zm-green " +
+    (comfy ? "text-gray-900" : "text-gray-700");
   const sortBtnClassEnd = `${sortBtnClass} ml-auto w-full justify-end`;
   const [categoryOptions, setCategoryOptions] = useState([]);
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -952,7 +932,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                               <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-slate-800 hover:bg-slate-50">
                                 <input
                                   type="checkbox"
-                                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                  className="h-4 w-4 rounded border-slate-300 text-zm-green focus:ring-zm-green/40"
                                   checked={colVis[id] !== false}
                                   disabled={id === "movement_date"}
                                   onChange={() => toggleColumnVisibility(id)}
@@ -975,12 +955,15 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
             )}
 
             {/*
-              Un solo contenedor con overflow-auto: si el scroll horizontal va en un hijo,
-              position:sticky del thead suele fallar. Así encabezado + filtros quedan fijos
-              al hacer scroll dentro de la tabla; el scroll de página mueve todo el bloque.
+              Vista cómoda: solo scroll vertical, sin horizontal (`table-fixed` + %).
+              Otras vistas: overflow-auto por si la tabla supera el viewport.
             */}
             <div
-              className={`${maxHeightClass} w-full min-w-0 overflow-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]`}
+              className={`${maxHeightClass} w-full min-w-0 overscroll-y-contain [-webkit-overflow-scrolling:touch] ${
+                comfy
+                  ? "overflow-y-auto overflow-x-hidden"
+                  : "overflow-auto overscroll-x-contain"
+              }`}
             >
                 {hideInlineSummaryTotals &&
                   comfy &&
@@ -1028,15 +1011,15 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                             )}
                             {id === "debit_bs" && (
                               <div
-                                className={`${COMFY_TOOLBAR_STAT_CARD} border-red-100 bg-gradient-to-br from-red-50/95 to-white ring-1 ring-red-900/5`}
+                                className={`${COMFY_TOOLBAR_STAT_CARD} border-orange-100 bg-gradient-to-br from-orange-50/90 to-white ring-1 ring-orange-900/5`}
                               >
                                 <p
-                                  className={`${COMFY_TOOLBAR_STAT_LABEL} text-right text-red-800/90`}
+                                  className={`${COMFY_TOOLBAR_STAT_LABEL} text-right text-orange-800/90`}
                                 >
                                   Total debe
                                 </p>
                                 <p
-                                  className={`${COMFY_TOOLBAR_STAT_VALUE} text-red-900`}
+                                  className={`${COMFY_TOOLBAR_STAT_VALUE} text-orange-600`}
                                 >
                                   Bs {formatBs(visibleTotals.debit)}
                                 </p>
@@ -1044,15 +1027,15 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                             )}
                             {id === "credit_bs" && (
                               <div
-                                className={`${COMFY_TOOLBAR_STAT_CARD} border-emerald-100 bg-gradient-to-br from-emerald-50/95 to-white ring-1 ring-emerald-900/5`}
+                                className={`${COMFY_TOOLBAR_STAT_CARD} border-gray-200 bg-gradient-to-br from-gray-50/95 to-white ring-1 ring-gray-900/5`}
                               >
                                 <p
-                                  className={`${COMFY_TOOLBAR_STAT_LABEL} text-right text-emerald-800/90`}
+                                  className={`${COMFY_TOOLBAR_STAT_LABEL} text-right text-gray-600`}
                                 >
                                   Total haber
                                 </p>
                                 <p
-                                  className={`${COMFY_TOOLBAR_STAT_VALUE} text-emerald-900`}
+                                  className={`${COMFY_TOOLBAR_STAT_VALUE} text-gray-900`}
                                 >
                                   Bs {formatBs(visibleTotals.credit)}
                                 </p>
@@ -1060,16 +1043,16 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                             )}
                             {id === "balance_bs" && (
                               <div
-                                className={`${COMFY_TOOLBAR_STAT_CARD} border-indigo-100 bg-gradient-to-br from-indigo-50/80 to-white ring-1 ring-indigo-900/5`}
+                                className={`${COMFY_TOOLBAR_STAT_CARD} border-gray-200 bg-gradient-to-br from-gray-50/80 to-white ring-1 ring-gray-900/5`}
                                 title="Saldo según el último movimiento en orden de fecha (no es la suma de la columna)."
                               >
                                 <p
-                                  className={`${COMFY_TOOLBAR_STAT_LABEL} text-right text-indigo-800/85`}
+                                  className={`${COMFY_TOOLBAR_STAT_LABEL} text-right text-gray-600`}
                                 >
                                   Saldo final
                                 </p>
                                 <p
-                                  className={`${COMFY_TOOLBAR_STAT_VALUE} text-slate-900`}
+                                  className={`${COMFY_TOOLBAR_STAT_VALUE} text-gray-900`}
                                 >
                                   Bs {formatBs(visibleTotals.balance)}
                                 </p>
@@ -1106,7 +1089,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                                             <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-slate-800 hover:bg-slate-50">
                                               <input
                                                 type="checkbox"
-                                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                                className="h-4 w-4 rounded border-slate-300 text-zm-green focus:ring-zm-green/40"
                                                 checked={colVis[cid] !== false}
                                                 disabled={cid === "movement_date"}
                                                 onChange={() =>
@@ -1163,7 +1146,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                                       <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-slate-800 hover:bg-slate-50">
                                         <input
                                           type="checkbox"
-                                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                          className="h-4 w-4 rounded border-slate-300 text-zm-green focus:ring-zm-green/40"
                                           checked={colVis[cid] !== false}
                                           disabled={cid === "movement_date"}
                                           onChange={() =>
@@ -1189,21 +1172,16 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                 <table
                 className={`${
                   comfy
-                    ? "min-w-full w-max table-auto border-collapse text-[15px] leading-snug"
+                    ? "w-full min-w-0 table-fixed border-collapse text-[clamp(12px,1.05vw,15px)] leading-snug"
                     : "min-w-full text-sm"
                 }`}
               >
                 {comfy && comfyColFractions && comfyColFractions.length > 0 && (
                   <colgroup>
-                    {comfyColFractions.map(({ id }) => (
+                    {comfyColFractions.map(({ id, pct }) => (
                       <col
                         key={id}
-                        style={{
-                          minWidth: COMFY_COL_MIN_PX[id] ?? 96,
-                          ...(id === "description"
-                            ? { maxWidth: COMFY_DESC_MAX }
-                            : {}),
-                        }}
+                        style={{ width: `${pct}%` }}
                       />
                     ))}
                   </colgroup>
@@ -1218,14 +1196,14 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                     }`}
                   >
                     {visibleCol("movement_date") && (
-                      <th className="text-left px-2 py-1.5 whitespace-nowrap">
+                      <th className="text-left px-2 py-1.5 whitespace-nowrap min-w-0">
                         <button
                           type="button"
                           onClick={() => toggleSort("movement_date")}
                           className={sortBtnClass}
                         >
                           Fecha{" "}
-                          <span className="text-blue-600 font-mono text-xs">
+                          <span className="text-zm-green font-mono text-xs">
                             {sortArrow(
                               sortColumn === "movement_date",
                               sortDir
@@ -1235,14 +1213,14 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                       </th>
                     )}
                     {visibleCol("transaction_code") && (
-                      <th className="text-left px-2 py-1.5 whitespace-nowrap">
+                      <th className="text-left px-2 py-1.5 whitespace-nowrap min-w-0">
                         <button
                           type="button"
                           onClick={() => toggleSort("transaction_code")}
                           className={sortBtnClass}
                         >
                           Código{" "}
-                          <span className="text-blue-600 font-mono text-xs">
+                          <span className="text-zm-green font-mono text-xs">
                             {sortArrow(
                               sortColumn === "transaction_code",
                               sortDir
@@ -1252,14 +1230,14 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                       </th>
                     )}
                     {visibleCol("transaction_type") && (
-                      <th className="text-left px-2 py-1.5 whitespace-nowrap">
+                      <th className="text-left px-2 py-1.5 whitespace-nowrap min-w-0">
                         <button
                           type="button"
                           onClick={() => toggleSort("transaction_type")}
                           className={sortBtnClass}
                         >
                           Tipo trans.{" "}
-                          <span className="text-blue-600 font-mono text-xs">
+                          <span className="text-zm-green font-mono text-xs">
                             {sortArrow(
                               sortColumn === "transaction_type",
                               sortDir
@@ -1269,14 +1247,14 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                       </th>
                     )}
                     {visibleCol("operation_type") && (
-                      <th className="text-left px-2 py-1.5 whitespace-nowrap">
+                      <th className="text-left px-2 py-1.5 whitespace-nowrap min-w-0">
                         <button
                           type="button"
                           onClick={() => toggleSort("operation_type")}
                           className={sortBtnClass}
                         >
                           Tipo oper.{" "}
-                          <span className="text-blue-600 font-mono text-xs">
+                          <span className="text-zm-green font-mono text-xs">
                             {sortArrow(
                               sortColumn === "operation_type",
                               sortDir
@@ -1286,73 +1264,70 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                       </th>
                     )}
                     {visibleCol("description") && (
-                      <th
-                        className="text-left px-2 py-1.5 min-w-0"
-                        style={comfy ? { maxWidth: COMFY_DESC_MAX } : undefined}
-                      >
+                      <th className="text-left px-2 py-1.5 min-w-0">
                         <button
                           type="button"
                           onClick={() => toggleSort("description")}
                           className={sortBtnClass}
                         >
                           Descripción{" "}
-                          <span className="text-blue-600 font-mono text-xs">
+                          <span className="text-zm-green font-mono text-xs">
                             {sortArrow(sortColumn === "description", sortDir)}
                           </span>
                         </button>
                       </th>
                     )}
                     {visibleCol("reference") && (
-                      <th className="text-left px-2 py-1.5 whitespace-nowrap">
+                      <th className="text-left px-2 py-1.5 whitespace-nowrap min-w-0">
                         <button
                           type="button"
                           onClick={() => toggleSort("reference")}
                           className={sortBtnClass}
                         >
                           Referencia{" "}
-                          <span className="text-blue-600 font-mono text-xs">
+                          <span className="text-zm-green font-mono text-xs">
                             {sortArrow(sortColumn === "reference", sortDir)}
                           </span>
                         </button>
                       </th>
                     )}
                     {visibleCol("debit_bs") && (
-                      <th className="text-right px-2 py-1.5 whitespace-nowrap">
+                      <th className="text-right px-2 py-1.5 whitespace-nowrap min-w-0">
                         <button
                           type="button"
                           onClick={() => toggleSort("debit_bs")}
                           className={sortBtnClassEnd}
                         >
                           Debe{" "}
-                          <span className="text-blue-600 font-mono text-xs">
+                          <span className="text-zm-green font-mono text-xs">
                             {sortArrow(sortColumn === "debit_bs", sortDir)}
                           </span>
                         </button>
                       </th>
                     )}
                     {visibleCol("credit_bs") && (
-                      <th className="text-right px-2 py-1.5 whitespace-nowrap">
+                      <th className="text-right px-2 py-1.5 whitespace-nowrap min-w-0">
                         <button
                           type="button"
                           onClick={() => toggleSort("credit_bs")}
                           className={sortBtnClassEnd}
                         >
                           Haber{" "}
-                          <span className="text-blue-600 font-mono text-xs">
+                          <span className="text-zm-green font-mono text-xs">
                             {sortArrow(sortColumn === "credit_bs", sortDir)}
                           </span>
                         </button>
                       </th>
                     )}
                     {visibleCol("balance_bs") && (
-                      <th className="text-right px-2 py-1.5 whitespace-nowrap">
+                      <th className="text-right px-2 py-1.5 whitespace-nowrap min-w-0">
                         <button
                           type="button"
                           onClick={() => toggleSort("balance_bs")}
                           className={sortBtnClassEnd}
                         >
                           Saldo{" "}
-                          <span className="text-blue-600 font-mono text-xs">
+                          <span className="text-zm-green font-mono text-xs">
                             {sortArrow(sortColumn === "balance_bs", sortDir)}
                           </span>
                         </button>
@@ -1365,7 +1340,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                         }`}
                       >
                         <span
-                          className={`font-semibold ${comfy ? "text-slate-800 text-xs" : "text-gray-700"}`}
+                          className={`font-semibold ${comfy ? "text-gray-900 text-xs" : "text-gray-700"}`}
                         >
                           Categoría
                         </span>
@@ -1381,7 +1356,11 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                     style={{ top: filterRowStickyTopPx }}
                   >
                     {visibleCol("movement_date") && (
-                      <th className="text-left align-top px-2 py-1 font-normal min-w-[140px]">
+                      <th
+                        className={`text-left align-top px-2 py-1 font-normal ${
+                          comfy ? "min-w-0" : "min-w-[140px]"
+                        }`}
+                      >
                         <span className="sr-only">Filtrar por fecha</span>
                         <select
                           value={lotColFilterDate}
@@ -1413,7 +1392,11 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                       </th>
                     )}
                     {visibleCol("transaction_code") && (
-                      <th className="text-left align-top px-2 py-1 font-normal min-w-[88px]">
+                      <th
+                        className={`text-left align-top px-2 py-1 font-normal ${
+                          comfy ? "min-w-0" : "min-w-[88px]"
+                        }`}
+                      >
                         <span className="sr-only">Filtrar por código</span>
                         <select
                           value={lotColFilterCode}
@@ -1433,7 +1416,11 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                       </th>
                     )}
                     {visibleCol("transaction_type") && (
-                      <th className="text-left align-top px-2 py-1 font-normal min-w-[120px]">
+                      <th
+                        className={`text-left align-top px-2 py-1 font-normal ${
+                          comfy ? "min-w-0" : "min-w-[120px]"
+                        }`}
+                      >
                         <span className="sr-only">
                           Filtrar por tipo de transacción
                         </span>
@@ -1455,7 +1442,11 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                       </th>
                     )}
                     {visibleCol("operation_type") && (
-                      <th className="text-left align-top px-2 py-1 font-normal min-w-[140px]">
+                      <th
+                        className={`text-left align-top px-2 py-1 font-normal ${
+                          comfy ? "min-w-0" : "min-w-[140px]"
+                        }`}
+                      >
                         <span className="sr-only">
                           Filtrar por tipo de operación
                         </span>
@@ -1478,8 +1469,9 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                     )}
                     {visibleCol("description") && (
                       <th
-                        className="text-left align-top px-2 py-1 font-normal min-w-[120px]"
-                        style={comfy ? { maxWidth: COMFY_DESC_MAX } : undefined}
+                        className={`text-left align-top px-2 py-1 font-normal ${
+                          comfy ? "min-w-0" : "min-w-[120px]"
+                        }`}
                       >
                         <span className="sr-only">
                           Buscar en descripción, referencia y códigos
@@ -1509,7 +1501,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                       </th>
                     )}
                     {visibleCol("reference") && (
-                      <th className="text-right px-2 py-1 align-bottom whitespace-nowrap bg-gray-50 border-l border-gray-100">
+                      <th className="text-right px-2 py-1 align-bottom whitespace-nowrap bg-gray-50 border-l border-gray-100 min-w-0">
                         {!hideInlineSummaryTotals && (
                           <>
                             <span className="block text-[10px] leading-tight text-gray-500 font-normal">
@@ -1523,13 +1515,13 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                       </th>
                     )}
                     {visibleCol("debit_bs") && (
-                      <th className="text-right px-2 py-1 align-bottom whitespace-nowrap bg-gray-50 border-l border-gray-200">
+                      <th className="text-right px-2 py-1 align-bottom whitespace-nowrap bg-gray-50 border-l border-gray-200 min-w-0">
                         {!hideInlineSummaryTotals && (
                           <>
                             <span className="block text-[10px] leading-tight text-gray-500 font-normal">
                               Total debe
                             </span>
-                            <span className="text-red-700 font-semibold tabular-nums text-[11px]">
+                            <span className="text-orange-600 font-semibold tabular-nums text-[11px]">
                               Bs {formatBs(visibleTotals.debit)}
                             </span>
                           </>
@@ -1537,13 +1529,13 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                       </th>
                     )}
                     {visibleCol("credit_bs") && (
-                      <th className="text-right px-2 py-1 align-bottom whitespace-nowrap bg-gray-50 border-l border-gray-100">
+                      <th className="text-right px-2 py-1 align-bottom whitespace-nowrap bg-gray-50 border-l border-gray-100 min-w-0">
                         {!hideInlineSummaryTotals && (
                           <>
                             <span className="block text-[10px] leading-tight text-gray-500 font-normal">
                               Total haber
                             </span>
-                            <span className="text-green-800 font-semibold tabular-nums text-[11px]">
+                            <span className="text-gray-900 font-semibold tabular-nums text-[11px]">
                               Bs {formatBs(visibleTotals.credit)}
                             </span>
                           </>
@@ -1552,7 +1544,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                     )}
                     {visibleCol("balance_bs") && (
                       <th
-                        className="text-right px-2 py-1 align-bottom whitespace-nowrap bg-gray-50 border-l border-gray-100"
+                        className="text-right px-2 py-1 align-bottom whitespace-nowrap bg-gray-50 border-l border-gray-100 min-w-0"
                         title="Saldo según el último movimiento en orden de fecha (no es la suma de la columna)."
                       >
                         {!hideInlineSummaryTotals && (
@@ -1578,7 +1570,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                           value={categoryFilter}
                           onChange={(e) => setCategoryFilter(e.target.value)}
                           className={`w-full border border-gray-300 rounded px-1 py-0.5 bg-white text-[11px] ${
-                            comfy ? "min-w-[9rem] max-w-full" : "max-w-[min(220px,40vw)]"
+                            comfy ? "min-w-0 max-w-full" : "max-w-[min(220px,40vw)]"
                           }`}
                           title="Filtrar por categoría"
                         >
@@ -1613,7 +1605,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                       >
                         {visibleCol("movement_date") && (
                           <td
-                            className={`whitespace-nowrap align-top tabular-nums ${
+                            className={`min-w-0 whitespace-nowrap align-top tabular-nums font-semibold text-gray-900 ${
                               comfy ? "px-4 py-3" : "px-3 py-2"
                             }`}
                           >
@@ -1624,7 +1616,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                         )}
                         {visibleCol("transaction_code") && (
                           <td
-                            className={`align-top whitespace-nowrap font-medium text-slate-700 ${
+                            className={`min-w-0 align-top whitespace-nowrap font-semibold text-gray-900 ${
                               comfy ? "px-4 py-3" : "px-3 py-2"
                             }`}
                           >
@@ -1633,8 +1625,8 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                         )}
                         {visibleCol("transaction_type") && (
                           <td
-                            className={`align-top max-w-[140px] text-slate-700 ${
-                              comfy ? "px-4 py-3" : "px-3 py-2"
+                            className={`min-w-0 align-top break-words font-semibold text-gray-900 ${
+                              comfy ? "px-4 py-3" : "max-w-[140px] px-3 py-2"
                             }`}
                           >
                             {m.transaction_type ?? "—"}
@@ -1642,8 +1634,8 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                         )}
                         {visibleCol("operation_type") && (
                           <td
-                            className={`align-top max-w-[140px] text-slate-700 ${
-                              comfy ? "px-4 py-3" : "px-3 py-2"
+                            className={`min-w-0 align-top break-words font-semibold text-gray-900 ${
+                              comfy ? "px-4 py-3" : "max-w-[140px] px-3 py-2"
                             }`}
                           >
                             {m.operation_type ?? "—"}
@@ -1651,19 +1643,18 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                         )}
                         {visibleCol("description") && (
                           <td
-                            className={`align-top min-w-0 break-words ${
+                            className={`align-top min-w-0 break-words text-gray-900 ${
                               comfy
-                                ? "px-2 py-2 text-slate-700"
+                                ? "px-2 py-2"
                                 : "max-w-lg px-3 py-2"
                             }`}
-                            style={comfy ? { maxWidth: COMFY_DESC_MAX } : undefined}
                             title={String(m.description ?? "")}
                           >
                             <span
                               className={
                                 comfy
-                                  ? "line-clamp-5 block text-[11.5px] leading-[1.35] text-slate-700"
-                                  : "line-clamp-3 text-xs leading-snug"
+                                  ? "line-clamp-5 block text-[11.5px] font-semibold leading-[1.35] text-gray-900"
+                                  : "line-clamp-3 text-xs font-semibold leading-snug text-gray-900"
                               }
                             >
                               {m.description ?? "—"}
@@ -1672,7 +1663,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                         )}
                         {visibleCol("reference") && (
                           <td
-                            className={`align-top whitespace-nowrap tabular-nums text-slate-600 ${
+                            className={`min-w-0 align-top whitespace-nowrap tabular-nums font-semibold text-gray-900 ${
                               comfy ? "px-4 py-3" : "px-3 py-2"
                             }`}
                           >
@@ -1681,8 +1672,8 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                         )}
                         {visibleCol("debit_bs") && (
                           <td
-                            className={`text-right text-red-700 align-top whitespace-nowrap tabular-nums font-medium ${
-                              comfy ? "px-4 py-3" : "px-3 py-2 text-red-600"
+                            className={`min-w-0 text-right align-top whitespace-nowrap tabular-nums font-semibold text-orange-600 ${
+                              comfy ? "px-4 py-3" : "px-3 py-2"
                             }`}
                           >
                             Bs {formatBs(m.debit_bs)}
@@ -1690,10 +1681,8 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                         )}
                         {visibleCol("credit_bs") && (
                           <td
-                            className={`text-right align-top whitespace-nowrap tabular-nums font-medium ${
-                              comfy
-                                ? "px-4 py-3 text-emerald-800"
-                                : "px-3 py-2 text-green-700"
+                            className={`min-w-0 text-right align-top whitespace-nowrap tabular-nums font-semibold text-gray-900 ${
+                              comfy ? "px-4 py-3" : "px-3 py-2"
                             }`}
                           >
                             Bs {formatBs(m.credit_bs)}
@@ -1701,8 +1690,8 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                         )}
                         {visibleCol("balance_bs") && (
                           <td
-                            className={`text-right align-top whitespace-nowrap tabular-nums text-slate-900 ${
-                              comfy ? "px-4 py-3 font-medium" : "px-3 py-2"
+                            className={`min-w-0 text-right align-top whitespace-nowrap tabular-nums text-gray-900 ${
+                              comfy ? "px-4 py-3 font-semibold" : "px-3 py-2 font-semibold"
                             }`}
                           >
                             Bs {formatBs(m.balance_bs)}
@@ -1781,7 +1770,7 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                   <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-slate-800 hover:bg-slate-50">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      className="h-4 w-4 rounded border-slate-300 text-zm-green focus:ring-zm-green/40"
                       checked={colVis[id] !== false}
                       disabled={id === "movement_date"}
                       onChange={() => toggleColumnVisibility(id)}

@@ -139,6 +139,19 @@ export async function fetchBankMovementsByAccount(bankAccountId, { limit } = {})
   return data;
 }
 
+/** Reapplies active classification rules + heuristics to all movements of the account (updates DB). */
+export async function reclassifyBankMovementsForAccount(bankAccountId) {
+  const response = await fetch(
+    `${API_URL}/finance/bank/movements/by-account/${bankAccountId}/reclassify`,
+    { method: "POST", credentials: "include" }
+  );
+  const data = await parseJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(data.message || "Error reclasificando movimientos.");
+  }
+  return data;
+}
+
 export async function patchBankImportBatchAccount(batchId, bankAccountId) {
   const response = await fetch(
     `${API_URL}/finance/bank/batches/${batchId}/account`,

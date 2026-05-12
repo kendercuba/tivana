@@ -158,6 +158,13 @@ router.post("/import", upload.single("file"), async (req, res) => {
       reportHint,
     });
 
+    if (result.parseError) {
+      return res.status(400).json({
+        success: false,
+        message: result.parseError,
+      });
+    }
+
     return res.json({
       success: true,
       message: "Reporte Loyverse procesado.",

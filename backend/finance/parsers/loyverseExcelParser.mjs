@@ -7,8 +7,12 @@ import XLSX from "xlsx";
  * `sourceFileName` ayuda a inferir fechas en CSV «por tipo de pago» sin columna Fecha.
  */
 
+/** User-facing (API / admin UI in Spanish). */
+const PAYMENT_FILENAME_RANGE_ERROR_ES =
+  "No se puede cargar este archivo: el nombre incluye dos fechas distintas (rango). Sube el reporte de ventas por tipo de pago de un solo día. Si el nombre repite el mismo día dos veces (por ejemplo 2026-05-01-2026-05-01), sí se acepta.";
+
 /**
- * @returns {{ facts: Array, detectedFormat: string }}
+ * @returns {{ facts: Array, detectedFormat: string, parseError?: string }}
  */
 export function parseLoyverseExcel(
   filePath,
@@ -20,6 +24,17 @@ export function parseLoyverseExcel(
   let detectedFormat = "unknown";
   const baseName =
     sourceFileName || path.basename(filePath || "", path.extname(filePath || ""));
+
+  if (workbookRequiresPaymentFilenameRule(workbook, reportHint)) {
+    const check = validatePaymentReportFilenameForImport(baseName);
+    if (!check.ok) {
+      return {
+        facts: [],
+        detectedFormat: "by_payment",
+        parseError: check.message,
+      };
+    }
+  }
 
   for (const sheetName of workbook.SheetNames) {
     const worksheet = workbook.Sheets[sheetName];
@@ -56,7 +71,62 @@ export function parseLoyverseExcel(
 
   if (detectedFormat === "unknown") detectedFormat = "daily_summary";
 
-  return { facts: out, detectedFormat };
+  return { facts: out, detectedFormat, parseError: undefined };
+}
+
+/** True if import should enforce single-day filename rules (payment report). */
+function workbookRequiresPaymentFilenameRule(workbook, reportHint) {
+  if (String(reportHint || "").trim() === "by_payment") return true;
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(worksheet, {
+      header: 1,
+      defval: "",
+      raw: false,
+    });
+    const headerIndex = findHeaderRowIndex(rows);
+    if (headerIndex === -1) continue;
+    const headers = rows[headerIndex].map((h) => normalizeHeader(h));
+    const fromContent = classifyLoyverseReportFromHeaders(headers, sheetName);
+    const format =
+      reportHint !== "auto"
+        ? reportHint
+        : fromContent !== "unknown"
+          ? fromContent
+          : detectFormat(headers, sheetName);
+    if (format === "by_payment") return true;
+  }
+  return false;
+}
+
+function slashDMYtoIso(s) {
+  const parts = String(s || "")
+    .trim()
+    .split("/");
+  if (parts.length !== 3) return null;
+  const d = Number(parts[0]);
+  const m = Number(parts[1]);
+  const y = Number(parts[2]);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d))
+    return null;
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/** Distinct calendar dates (YYYY-MM-DD) appearing in the file basename. */
+function collectDistinctCalendarDatesFromFilename(name) {
+  const iso = String(name || "").match(/\d{4}-\d{2}-\d{2}/g) || [];
+  const slash = String(name || "").match(/\d{1,2}\/\d{1,2}\/\d{4}/g) || [];
+  const fromSlash = slash.map((s) => slashDMYtoIso(s)).filter(Boolean);
+  return [...new Set([...iso, ...fromSlash])].sort();
+}
+
+function validatePaymentReportFilenameForImport(baseName) {
+  const distinct = collectDistinctCalendarDatesFromFilename(baseName);
+  if (distinct.length > 1) {
+    return { ok: false, message: PAYMENT_FILENAME_RANGE_ERROR_ES };
+  }
+  return { ok: true };
 }
 
 /** Reglas explícitas por cabeceras Loyverse (ES), antes del detector genérico. */
@@ -303,17 +373,21 @@ function mapDailySummaryRow(raw, sheetName) {
   };
 }
 
-/** Si el CSV no trae Fecha, usa el rango del nombre del archivo (ej. ...2026-05-01-2026-05-07). */
-function inferPeriodEndDateFromFilename(name) {
+/**
+ * Single business date for payment-type rows without a Fecha column.
+ * Call only after `validatePaymentReportFilenameForImport` passed (at most one distinct date in basename).
+ */
+function inferBusinessDateFromPaymentFilename(name) {
   if (!name) return null;
+  const distinct = collectDistinctCalendarDatesFromFilename(name);
+  if (distinct.length === 1) return distinct[0];
   const dates = String(name).match(/\d{4}-\d{2}-\d{2}/g);
-  if (dates?.length) return dates[dates.length - 1];
+  if (dates?.length === 1) return dates[0];
   const slashDates = String(name).match(/\d{1,2}\/\d{1,2}\/\d{4}/g);
+  if (slashDates?.length === 1) return slashDMYtoIso(slashDates[0]);
   if (slashDates?.length) {
     const last = slashDates[slashDates.length - 1];
-    const [d, m, y] = last.split("/");
-    if (d && m && y)
-      return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    return slashDMYtoIso(last);
   }
   return null;
 }
@@ -346,7 +420,7 @@ function pickRefundTransactionCount(raw) {
 function mapPaymentRow(raw, sheetName, sourceFileName = "") {
   let businessDate = pickDate(raw, ["date", "fecha", "día", "dia"]);
   if (!businessDate) {
-    businessDate = inferPeriodEndDateFromFilename(sourceFileName);
+    businessDate = inferBusinessDateFromPaymentFilename(sourceFileName);
   }
 
   const methodRaw = pickText(raw, [
@@ -418,10 +492,16 @@ function mapPaymentRow(raw, sheetName, sourceFileName = "") {
     enrichedRaw._loyverse_refund_txn_count = refundTxnCount;
   }
 
+  /** Texto de la columna «Tipo de pago» tal como viene en el Excel (p. ej. Tarjeta, Pago Movil). */
+  const paymentTypeLabel = methodRaw ? String(methodRaw).trim() : null;
+
   return {
     fact_type: "payment_breakdown",
     business_date: businessDate,
     payment_method: normalizePaymentMethod(methodRaw),
+    payment_type_label: paymentTypeLabel,
+    payment_refund_txn_count: refundTxnCount,
+    payment_refund_amount: refundAmt,
     item_name: null,
     sku: null,
     qty_sold: null,

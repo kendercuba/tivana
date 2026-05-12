@@ -1,0 +1,13 @@
+---
+description: UI responsiva en frontend (React/JSX/CSS)
+alwaysApply: true
+---
+
+# Diseño responsivo
+
+- Tratar **mobile-first**: diseñar primero para ~320px y ampliar con breakpoints (`@media`, clases responsivas, etc.) según el stack del proyecto.
+- Si el usuario indica breakpoints, columnas, comportamiento de nav/sidebar o “solo desktop”, **seguir esas instrucciones**; si no las da y el cambio es UI, usar un comportamiento razonable y coherente con el resto del sitio.
+- Evitar anchos fijos que rompan en pantallas pequeñas; preferir `max-width`, `%`, `minmax`, flex/grid y scroll horizontal solo cuando sea necesario y accesible.
+- Imágenes y medios: `max-width: 100%` o equivalente; no desbordar el viewport.
+- Textos y botones: tamaños y áreas táctiles usables en móvil; no depender solo de hover para acciones críticas.
+- Tablas y paneles admin: en pantallas estrechas, permitir scroll horizontal con contenedor claro o apilar/reorganizar según encaje con el patrón existente.

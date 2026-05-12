@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { format, startOfDay, subDays } from "date-fns";
 import { Settings2 } from "lucide-react";
 import BankMovementsTableBlock, { RefreshIcon } from "./BankMovementsTableBlock.jsx";
-import DateRangeFilter from "./DateRangeFilter.jsx";
+import LoyversePorPagoDateRange from "./LoyversePorPagoDateRange.jsx";
 import {
   fetchBankAccounts,
   fetchBankMovementsByAccount,
+  reclassifyBankMovementsForAccount,
 } from "../../../api/admin/finance/bankApi";
 
 function movementDateKey(m) {
@@ -15,10 +16,19 @@ function movementDateKey(m) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
 }
 
-function filterByDateRange(movements, range) {
-  if (!range?.from) return movements;
-  const from = format(startOfDay(range.from), "yyyy-MM-dd");
-  const to = format(startOfDay(range.to ?? range.from), "yyyy-MM-dd");
+function defaultLast30YmdRange() {
+  const end = startOfDay(new Date());
+  const start = startOfDay(subDays(new Date(), 30));
+  return {
+    startYmd: format(start, "yyyy-MM-dd"),
+    endYmd: format(end, "yyyy-MM-dd"),
+  };
+}
+
+function filterByYmdRange(movements, rangeStartYmd, rangeEndYmd) {
+  if (!rangeStartYmd || !rangeEndYmd) return movements;
+  const from = rangeStartYmd <= rangeEndYmd ? rangeStartYmd : rangeEndYmd;
+  const to = rangeStartYmd <= rangeEndYmd ? rangeEndYmd : rangeStartYmd;
   return movements.filter((m) => {
     const k = movementDateKey(m);
     if (!k) return false;
@@ -42,17 +52,25 @@ export default function BankAccountMovementsMonitor({
   const [monitorError, setMonitorError] = useState(null);
   const [monitorRefreshTick, setMonitorRefreshTick] = useState(0);
   const [filtersResetTick, setFiltersResetTick] = useState(0);
+  const [reclassifyLoading, setReclassifyLoading] = useState(false);
   const movementsTableRef = useRef(null);
   const columnPickerAnchorRef = useRef(null);
 
-  const [dateRange, setDateRange] = useState(() => ({
-    from: startOfDay(subDays(new Date(), 30)),
-    to: startOfDay(new Date()),
-  }));
+  const [rangeStart, setRangeStart] = useState(() => defaultLast30YmdRange().startYmd);
+  const [rangeEnd, setRangeEnd] = useState(() => defaultLast30YmdRange().endYmd);
+
+  const movementDateBounds = useMemo(() => {
+    const keys = monitorMovements
+      .map((m) => movementDateKey(m))
+      .filter(Boolean)
+      .sort();
+    if (keys.length === 0) return { min: "", max: "" };
+    return { min: keys[0], max: keys[keys.length - 1] };
+  }, [monitorMovements]);
 
   const filteredMovements = useMemo(
-    () => filterByDateRange(monitorMovements, dateRange),
-    [monitorMovements, dateRange]
+    () => filterByYmdRange(monitorMovements, rangeStart, rangeEnd),
+    [monitorMovements, rangeStart, rangeEnd]
   );
 
   async function loadAccounts() {
@@ -109,22 +127,33 @@ export default function BankAccountMovementsMonitor({
     };
   }, [monitorAccountId, accountsRefreshToken, monitorRefreshTick]);
 
-  function handleActualizar() {
-    setDateRange({
-      from: startOfDay(subDays(new Date(), 30)),
-      to: startOfDay(new Date()),
-    });
-    setMonitorRefreshTick((n) => n + 1);
+  async function handleActualizar() {
+    const { startYmd, endYmd } = defaultLast30YmdRange();
+    setRangeStart(startYmd);
+    setRangeEnd(endYmd);
     setFiltersResetTick((n) => n + 1);
+    if (monitorAccountId != null && !accountsLoading) {
+      try {
+        setReclassifyLoading(true);
+        await reclassifyBankMovementsForAccount(monitorAccountId);
+      } catch (e) {
+        window.alert(
+          e.message ||
+            "No se pudieron aplicar las reglas de clasificación. Revisa la consola del servidor."
+        );
+      } finally {
+        setReclassifyLoading(false);
+      }
+    }
+    setMonitorRefreshTick((n) => n + 1);
   }
 
   return (
-    <div className="mx-auto w-full max-w-[min(88rem,100%)] min-w-0 space-y-4 px-0 sm:px-1">
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/80 shadow-md shadow-slate-900/10">
-        <div className="p-3 sm:p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:gap-x-4 lg:gap-y-3">
+    <div className="mx-auto w-full max-w-full min-w-0 space-y-4 px-0 sm:px-1">
+      <div className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:gap-x-4 lg:gap-y-3">
             <div className="min-w-0 w-full flex-1 lg:max-w-md">
-              <label className="mb-1 block text-sm font-medium text-slate-800">
+              <label className="mb-1 block text-sm font-medium text-zm-sidebar">
                 Cuenta
               </label>
               <select
@@ -134,7 +163,7 @@ export default function BankAccountMovementsMonitor({
                   setMonitorAccountId(v === "" ? null : Number(v));
                 }}
                 disabled={accountsLoading || rows.length === 0}
-                className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-inner shadow-slate-900/5 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 disabled:bg-slate-100 disabled:text-slate-400"
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 shadow-sm outline-none transition hover:border-gray-400 focus:border-zm-green focus:ring-2 focus:ring-zm-green/30 disabled:bg-gray-50 disabled:text-gray-400"
               >
                 {rows.length === 0 ? (
                   <option value="">
@@ -152,19 +181,36 @@ export default function BankAccountMovementsMonitor({
             </div>
 
             <div className="w-full min-w-0 lg:flex-1 lg:max-w-md">
-              <DateRangeFilter value={dateRange} onChange={setDateRange} />
+              <span className="mb-1 block text-sm font-medium text-zm-sidebar">
+                Período
+              </span>
+              <LoyversePorPagoDateRange
+                rangeStart={rangeStart}
+                rangeEnd={rangeEnd}
+                dataMinYmd={movementDateBounds.min}
+                dataMaxYmd={movementDateBounds.max}
+                onApplyRange={(startYmd, endYmd) => {
+                  setRangeStart(startYmd);
+                  setRangeEnd(endYmd);
+                }}
+              />
             </div>
 
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-stretch sm:gap-2 lg:pb-0.5">
               <button
                 type="button"
-                disabled={monitorAccountId == null || accountsLoading}
+                disabled={
+                  monitorAccountId == null ||
+                  accountsLoading ||
+                  reclassifyLoading ||
+                  monitorLoading
+                }
                 onClick={handleActualizar}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 sm:w-auto"
-                title="Período últimos 30 días, actualizar datos y quitar filtros de tabla"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm transition hover:border-gray-400 hover:bg-gray-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-400 sm:w-auto"
+                title="Aplica reglas de clasificación actuales, últimos 30 días, recarga movimientos y quita filtros de tabla"
                 aria-label="Actualizar movimientos y restablecer filtros"
               >
-                <RefreshIcon className="h-4 w-4 shrink-0 text-slate-600" />
+                <RefreshIcon className="h-4 w-4 shrink-0 text-zm-green" />
                 Actualizar
               </button>
               <button
@@ -172,19 +218,19 @@ export default function BankAccountMovementsMonitor({
                 type="button"
                 disabled={monitorAccountId == null || accountsLoading}
                 onClick={() => movementsTableRef.current?.toggleColumnPicker?.()}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 sm:w-auto"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-sm font-semibold text-zm-green shadow-sm transition hover:bg-zm-green/5 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-400 sm:w-auto"
                 aria-label="Elegir columnas visibles"
                 aria-haspopup="menu"
               >
-                <Settings2 className="h-4 w-4 shrink-0 text-slate-600" aria-hidden />
+                <Settings2 className="h-4 w-4 shrink-0 text-zm-green" aria-hidden />
                 Columnas
               </button>
             </div>
           </div>
-        </div>
       </div>
 
-      <BankMovementsTableBlock
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden min-w-0">
+        <BankMovementsTableBlock
         ref={movementsTableRef}
         movements={filteredMovements}
         loading={monitorLoading}
@@ -215,12 +261,13 @@ export default function BankAccountMovementsMonitor({
             : "Selecciona una cuenta en el desplegable."
         }
         emptyLoadedMessage={
-          <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/80 p-6 text-center text-sm text-slate-600">
+          <p className="rounded-xl border border-dashed border-zm-green/25 bg-zm-cream/60 p-6 text-center text-sm text-gray-700">
             Esta cuenta no tiene movimientos en el período elegido, o aún no hay
             datos importados.
           </p>
         }
       />
+      </div>
     </div>
   );
 }

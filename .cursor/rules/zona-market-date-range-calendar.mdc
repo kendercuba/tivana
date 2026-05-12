@@ -1,0 +1,20 @@
+---
+description: Reutilizar el calendario de rango Loyverse/Zona Market (misma lógica, estilo y UX).
+alwaysApply: true
+---
+
+# Calendario de rango de fechas (estándar del proyecto)
+
+Cuando el usuario pida **un calendario**, **selector de fechas**, **rango de fechas** o equivalente en el frontend de este repo:
+
+1. **Usar el componente existente** `frontend/src/components/admin/finance/LoyversePorPagoDateRange.jsx` (importarlo y cablearlo con `rangeStart`, `rangeEnd`, `onApplyRange`, y opcionalmente `dataMinYmd` / `dataMaxYmd` para «Todo el historial»).
+2. **No sustituir** por otro date picker (MUI, react-datepicker nativo distinto, etc.) salvo que el usuario pida explícitamente otra librería; si hace falta en otra ruta, **extraer primero** un componente compartido copiando esta misma implementación (misma lógica y estilos), no reescribir desde cero.
+
+## Comportamiento y diseño a conservar
+
+- Popover con **calendario** + **presets** (Hoy, Ayer, …) que **aplican al instante** y cierran; **Hecho / Cancelar** para la selección manual en el grid.
+- **Clics en el calendario**: impar = solo inicio; par = cierra rango; **Hecho** con solo inicio = un solo día.
+- **Copy y `aria-label` en español**; valores al padre en **YYYY-MM-DD** local.
+- **Estilo**: variables CSS de `react-day-picker` sobre `.loyverse-rdp-override .rdp-root` con **branding Zona Market** (verde `#4F772D`, fondos de rango suaves, caption `#2c4819`), no el azul por defecto de la librería.
+
+Si el contexto no es finanzas Loyverse pero el usuario quiere «el mismo calendario», reutilizar este componente o moverlo a `frontend/src/components/shared/` manteniendo el mismo contrato y apariencia.

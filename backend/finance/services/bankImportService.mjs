@@ -258,6 +258,80 @@ export async function listMovementsByBatchId(batchId) {
   return rows;
 }
 
+/**
+ * Re-runs rule-based + heuristic classification for all movements of an account
+ * (same logic as BNC import). Overwrites category / subcategory / movement_type in DB.
+ */
+export async function reapplyBankClassificationToAccount(bankAccountId) {
+  const accId = Number(bankAccountId);
+  if (!Number.isFinite(accId) || accId <= 0) {
+    throw new Error("Cuenta inválida.");
+  }
+
+  const rules = await listRulesForClassification();
+  const movements = await listMovementsByBankAccountId(accId, { limit: 25000 });
+
+  const changes = [];
+  for (const m of movements) {
+    const c = classifyBankMovement(m, rules);
+    const subOld =
+      m.subcategory == null || m.subcategory === "" ? "—" : String(m.subcategory);
+    const subNew =
+      c.subcategory == null || c.subcategory === "" ? "—" : String(c.subcategory);
+    const mtOld = String(m.movement_type || "").trim();
+    const mtNew = String(c.movement_type || "").trim() || "unknown";
+    if (
+      String(c.category || "") !== String(m.category || "") ||
+      subNew !== subOld ||
+      mtNew !== mtOld
+    ) {
+      changes.push({
+        id: m.id,
+        category: String(c.category || ""),
+        subcategory: subNew,
+        movement_type: mtNew,
+      });
+    }
+  }
+
+  if (changes.length === 0) {
+    return { scanned: movements.length, updated: 0 };
+  }
+
+  const client = await pool.connect();
+  const CHUNK = 300;
+  try {
+    await client.query("BEGIN");
+    for (let i = 0; i < changes.length; i += CHUNK) {
+      const slice = changes.slice(i, i + CHUNK);
+      await client.query(
+        `
+        UPDATE finance_bank_movements m
+        SET category = j.category,
+            subcategory = j.subcategory,
+            movement_type = j.movement_type
+        FROM jsonb_to_recordset($1::jsonb) AS j(
+          id bigint,
+          category text,
+          subcategory text,
+          movement_type text
+        )
+        WHERE m.id = j.id
+        `,
+        [JSON.stringify(slice)]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return { scanned: movements.length, updated: changes.length };
+}
+
 export async function getBankMovementCategoryOptions() {
   return listFinanceCategoriesForBank();
 }

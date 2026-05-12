@@ -56,10 +56,10 @@ export default function FinanceBankHub() {
       onClick={() =>
         setSearchParams({ cuentasSub: sub })
       }
-      className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
+      className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
         cuentasSub === sub
-          ? "bg-white border-gray-300 text-gray-900 shadow-sm"
-          : "bg-transparent border-transparent text-gray-600 hover:text-gray-900 hover:bg-white/60"
+          ? "bg-zm-cream/70 border-zm-green/45 text-zm-sidebar shadow-sm"
+          : "bg-transparent border-transparent text-gray-600 hover:text-zm-sidebar hover:bg-zm-cream/40"
       }`}
     >
       {label}
@@ -75,10 +75,10 @@ export default function FinanceBankHub() {
         <div
           className={`max-w-4xl ${compactMovimientosChrome ? "px-4 pt-2 pb-0 sm:px-6" : "px-4 pt-3 pb-0 sm:px-6"}`}
         >
-          <h1 className="text-xl font-bold text-gray-800 leading-tight">
+          <h1 className="text-xl font-bold text-zm-sidebar leading-tight">
             Cuentas Bancarias
           </h1>
-          <div className="border-b border-gray-200 mt-2">
+          <div className="border-b border-zm-green/20 mt-2">
             <div className="max-w-6xl flex flex-wrap gap-1 py-1">
               {cuentasSubBtn("gestionar", "Gestionar cuentas")}
               {cuentasSubBtn("movimientos", "Movimientos por cuenta")}

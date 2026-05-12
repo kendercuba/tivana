@@ -13,25 +13,34 @@ import { pool } from "../../db.mjs";
  */
 function buildLoyversePreviewPayload(facts, sourceFile) {
   return {
-    rows: facts.map((f) => ({
-      fact_type: f.fact_type,
-      business_date: f.business_date ?? null,
-      payment_method: f.payment_method ?? null,
-      item_name: f.item_name ?? null,
-      sku: f.sku ?? null,
-      qty_sold: f.qty_sold ?? null,
-      gross_sales: f.gross_sales ?? null,
-      net_sales: f.net_sales ?? null,
-      gross_profit: f.gross_profit ?? null,
-      refunds: f.refunds ?? null,
-      discounts: f.discounts ?? null,
-      taxes: f.taxes ?? null,
-      margin_pct: f.margin_pct ?? null,
-      cost_goods: f.cost_goods ?? null,
-      transactions_count: f.transactions_count ?? null,
-      source_file: sourceFile,
-      sheet_name: f.sheet_name ?? null,
-    })),
+    rows: facts.map((f) => {
+      const row = {
+        fact_type: f.fact_type,
+        business_date: f.business_date ?? null,
+        payment_method: f.payment_method ?? null,
+        item_name: f.item_name ?? null,
+        sku: f.sku ?? null,
+        qty_sold: f.qty_sold ?? null,
+        gross_sales: f.gross_sales ?? null,
+        net_sales: f.net_sales ?? null,
+        gross_profit: f.gross_profit ?? null,
+        refunds: f.refunds ?? null,
+        discounts: f.discounts ?? null,
+        taxes: f.taxes ?? null,
+        margin_pct: f.margin_pct ?? null,
+        cost_goods: f.cost_goods ?? null,
+        transactions_count: f.transactions_count ?? null,
+        source_file: sourceFile,
+        sheet_name: f.sheet_name ?? null,
+      };
+      if (f.fact_type === "payment_breakdown") {
+        row.payment_type_label = f.payment_type_label ?? null;
+        row.payment_refund_txn_count = f.payment_refund_txn_count ?? null;
+        row.payment_refund_amount = f.payment_refund_amount ?? null;
+        row.raw_row = sanitizeRawRowForJsonb(f.raw_row);
+      }
+      return row;
+    }),
   };
 }
 
@@ -79,11 +88,23 @@ export async function importLoyverseExcel({
   sourceFile,
   reportHint = "auto",
 }) {
-  const { facts, detectedFormat } = parseLoyverseExcel(
+  const { facts, detectedFormat, parseError } = parseLoyverseExcel(
     filePath,
     reportHint,
     sourceFile
   );
+
+  if (parseError) {
+    return {
+      importBatchId: null,
+      totalInFile: 0,
+      inserted: 0,
+      skippedDuplicate: 0,
+      detectedFormat: detectedFormat || "by_payment",
+      rows: [],
+      parseError,
+    };
+  }
   /**
    * Importante: pasar JSON como **string** y castear a jsonb en SQL.
    * Si pasamos un objeto JS, `pg` puede volver a serializarlo de forma incompatible
@@ -278,6 +299,9 @@ export async function listLoyverseFactsByBatchId(batchId, { limit = 500 } = {}) 
       source_file: row.source_file ?? null,
       sheet_name: row.sheet_name ?? null,
       raw_row: row.raw_row ?? null,
+      payment_type_label: row.payment_type_label ?? null,
+      payment_refund_txn_count: row.payment_refund_txn_count ?? null,
+      payment_refund_amount: row.payment_refund_amount ?? null,
       import_batch_id: id,
       created_at: null,
       _previewFromFileSnapshot: true,

@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { Banknote, CreditCard, Smartphone, Send } from "lucide-react";
 import {
   fetchLoyverseFactsByTypes,
   fetchLoyverseDailyRates,
   saveLoyverseDailyRate,
 } from "../../../api/admin/finance/loyverseApi";
+import LoyversePorPagoDateRange from "../../../components/admin/finance/LoyversePorPagoDateRange.jsx";
 
 function formatDateShort(value) {
   if (!value) return "—";
@@ -35,14 +37,6 @@ function formatUsd(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(n);
-}
-
-function formatRangeLabelEs(startYmd, endYmd) {
-  if (!startYmd || !endYmd) return "";
-  const o = { day: "numeric", month: "short", year: "numeric" };
-  const a = new Date(`${startYmd}T12:00:00`);
-  const b = new Date(`${endYmd}T12:00:00`);
-  return `${new Intl.DateTimeFormat("es-VE", o).format(a)} — ${new Intl.DateTimeFormat("es-VE", o).format(b)}`;
 }
 
 /** Costos netos (USD) = ventas netas − beneficio bruto. */
@@ -140,6 +134,81 @@ function paymentMethodSortKey(pm) {
   return i === -1 ? 100 : i;
 }
 
+const paymentNumericCellClass =
+  "text-right tabular-nums text-base sm:text-lg font-semibold text-gray-900";
+
+/** Wrapper for txn / refund count cells (reliable centering inside table-fixed). */
+const paymentCountInnerClass =
+  "flex w-full min-h-[1.25rem] items-center justify-center tabular-nums text-base sm:text-lg font-semibold text-gray-900";
+
+/** Icon + label for payment breakdown rows (Zona Market palette). */
+function PaymentMethodWithIcon({ paymentMethod }) {
+  const key = String(paymentMethod || "").trim().toLowerCase();
+  const label = formatPaymentMethodLabel(paymentMethod);
+
+  const wrap =
+    "inline-flex min-w-0 items-center gap-2 text-sm sm:text-base font-semibold text-gray-900";
+
+  if (key === "efectivo") {
+    return (
+      <span className={wrap}>
+        <span
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zm-yellow/40 text-zm-sidebar ring-2 ring-zm-yellow/70"
+          aria-hidden
+        >
+          <Banknote className="h-[1.15rem] w-[1.15rem] sm:h-5 sm:w-5" strokeWidth={2.25} />
+        </span>
+        <span className="min-w-0 leading-snug">{label}</span>
+      </span>
+    );
+  }
+  if (key === "pago_movil") {
+    return (
+      <span className={wrap}>
+        <span
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zm-green/20 text-zm-green ring-2 ring-zm-green/35"
+          aria-hidden
+        >
+          <Smartphone className="h-[1.15rem] w-[1.15rem] sm:h-5 sm:w-5" strokeWidth={2.25} />
+        </span>
+        <span className="min-w-0 leading-snug">{label}</span>
+      </span>
+    );
+  }
+  if (key === "pos") {
+    return (
+      <span className={wrap}>
+        <span
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zm-sidebar text-white ring-2 ring-zm-green/40"
+          aria-hidden
+        >
+          <CreditCard className="h-[1.15rem] w-[1.15rem] sm:h-5 sm:w-5" strokeWidth={2.25} />
+        </span>
+        <span className="min-w-0 leading-snug">{label}</span>
+      </span>
+    );
+  }
+  if (key === "zelle") {
+    return (
+      <span className={wrap}>
+        <span
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zm-red/12 text-zm-red ring-2 ring-zm-red/30"
+          aria-hidden
+        >
+          <Send className="h-[1.15rem] w-[1.15rem] sm:h-5 sm:w-5" strokeWidth={2.25} />
+        </span>
+        <span className="min-w-0 leading-snug">{label}</span>
+      </span>
+    );
+  }
+
+  return (
+    <span className={`${wrap} pl-0.5`}>
+      <span className="min-w-0 leading-snug">{label}</span>
+    </span>
+  );
+}
+
 /** Tarjeta tipo Loyverse: total USD + total Bs opcional */
 function SummaryTotalCard({ title, usdSum, bsSum, accent }) {
   const showBs = bsSum != null && Number.isFinite(bsSum);
@@ -164,8 +233,17 @@ function SummaryTotalCard({ title, usdSum, bsSum, accent }) {
   );
 }
 
-/** USD arriba; equivalente en Bs abajo (naranja, tamaño cercano al USD si hay tasa). */
-function UsdDualCell({ usdValue, rateBs, variant = "default" }) {
+/**
+ * USD on top, Bs below (orange).
+ * `numericSize`: comfort = resumen; large = payment table (bigger, easier to read).
+ */
+function UsdDualCell({
+  usdValue,
+  rateBs,
+  variant = "default",
+  numericSize = "comfort",
+  tightPad = false,
+}) {
   const usdNum =
     usdValue != null && Number.isFinite(Number(usdValue))
       ? Number(usdValue)
@@ -181,17 +259,29 @@ function UsdDualCell({ usdValue, rateBs, variant = "default" }) {
       : variant === "cost"
         ? "text-gray-800"
         : variant === "emphasis"
-          ? "font-medium text-gray-900"
-          : "text-gray-900";
+          ? "font-semibold text-gray-900"
+          : "font-semibold text-gray-900";
 
   const usdText = formatUsd(usdValue);
 
+  const pad = tightPad
+    ? "px-1.5 py-2 sm:px-2 min-w-0 max-w-full"
+    : "px-3 py-2";
+  const usdSize =
+    numericSize === "large"
+      ? "text-base sm:text-lg font-semibold tabular-nums leading-tight tracking-tight"
+      : "text-[15px] leading-snug tabular-nums";
+  const bsSize =
+    numericSize === "large"
+      ? "text-sm sm:text-base font-semibold tabular-nums leading-tight text-orange-600"
+      : "text-[14px] sm:text-[15px] leading-snug text-orange-600 font-semibold tabular-nums";
+
   return (
-    <td className={`px-3 py-2 text-right align-middle ${line1Class}`}>
-      <div className="flex flex-col items-end justify-center gap-1">
-        <span className="tabular-nums text-[15px] leading-snug">{usdText}</span>
+    <td className={`${pad} text-right align-middle ${line1Class}`}>
+      <div className="flex min-w-0 flex-col items-end justify-center gap-0.5 sm:gap-1">
+        <span className={usdSize}>{usdText}</span>
         {bsLine != null && (
-          <span className="tabular-nums text-[14px] sm:text-[15px] leading-snug text-orange-600 font-semibold">
+          <span className={`${bsSize} break-all sm:break-normal`}>
             Bs {formatBs(bsLine)}
           </span>
         )}
@@ -204,23 +294,41 @@ function UsdDualCell({ usdValue, rateBs, variant = "default" }) {
  * Totales USD + Bs ya convertidos (cada fila importada × tasa de su día).
  * Las tasas vienen de «Resumen de ventas» (API daily-rates).
  */
-function UsdBsAggregateCell({ usdValue, bsSum, variant = "default" }) {
+function UsdBsAggregateCell({
+  usdValue,
+  bsSum,
+  variant = "default",
+  numericSize = "comfort",
+  tightPad = false,
+}) {
   const line1Class =
     variant === "emphasis"
-      ? "font-medium text-gray-900"
-      : "text-gray-900";
+      ? "font-semibold text-gray-900"
+      : "font-semibold text-gray-900";
   const usdText = formatUsd(usdValue);
   const showBs =
     bsSum != null &&
     Number.isFinite(bsSum) &&
     Math.abs(Number(bsSum)) > 1e-6;
 
+  const pad = tightPad
+    ? "px-1.5 py-2 sm:px-2 min-w-0 max-w-full"
+    : "px-3 py-2";
+  const usdSize =
+    numericSize === "large"
+      ? "text-base sm:text-lg font-semibold tabular-nums leading-tight tracking-tight"
+      : "text-[15px] leading-snug tabular-nums";
+  const bsSize =
+    numericSize === "large"
+      ? "text-sm sm:text-base font-semibold tabular-nums leading-tight text-orange-600"
+      : "text-[14px] sm:text-[15px] leading-snug text-orange-600 font-semibold tabular-nums";
+
   return (
-    <td className={`px-3 py-2 text-right align-middle ${line1Class}`}>
-      <div className="flex flex-col items-end justify-center gap-1">
-        <span className="tabular-nums text-[15px] leading-snug">{usdText}</span>
+    <td className={`${pad} text-right align-middle ${line1Class}`}>
+      <div className="flex min-w-0 flex-col items-end justify-center gap-0.5 sm:gap-1">
+        <span className={usdSize}>{usdText}</span>
         {showBs && (
-          <span className="tabular-nums text-[14px] sm:text-[15px] leading-snug text-orange-600 font-semibold">
+          <span className={`${bsSize} break-all sm:break-normal`}>
             Bs {formatBs(bsSum)}
           </span>
         )}
@@ -313,6 +421,17 @@ export function LoyverseResumenVentas() {
       if (!prev || curBatch > prevBatch) m.set(d, r);
     }
     return m;
+  }, [rows]);
+
+  /** Fechas mín/máx con datos importados (presets y «Todo el historial» del calendario). */
+  const importDateBounds = useMemo(() => {
+    const uniq = [
+      ...new Set(rows.map((r) => String(r.business_date || "").slice(0, 10))),
+    ]
+      .filter(Boolean)
+      .sort();
+    if (uniq.length === 0) return { min: "", max: "" };
+    return { min: uniq[0], max: uniq[uniq.length - 1] };
   }, [rows]);
 
   /**
@@ -420,41 +539,6 @@ export function LoyverseResumenVentas() {
     setRangeEnd(addDaysYmd(rangeEnd, direction * step));
   }
 
-  function presetLast7() {
-    const uniq = [
-      ...new Set(rows.map((r) => String(r.business_date || "").slice(0, 10))),
-    ]
-      .filter(Boolean)
-      .sort();
-    if (uniq.length === 0) return;
-    const end = uniq[uniq.length - 1];
-    const start = addDaysYmd(end, -6);
-    const lo = uniq[0];
-    setRangeStart(start < lo ? lo : start);
-    setRangeEnd(end);
-  }
-
-  function presetAll() {
-    const uniq = [
-      ...new Set(rows.map((r) => String(r.business_date || "").slice(0, 10))),
-    ]
-      .filter(Boolean)
-      .sort();
-    if (uniq.length === 0) return;
-    setRangeStart(uniq[0]);
-    setRangeEnd(uniq[uniq.length - 1]);
-  }
-
-  function onChangeRangeStart(v) {
-    setRangeStart(v);
-    if (rangeEnd && v > rangeEnd) setRangeEnd(v);
-  }
-
-  function onChangeRangeEnd(v) {
-    setRangeEnd(v);
-    if (rangeStart && v < rangeStart) setRangeStart(v);
-  }
-
   function rateDisplay(dateStr) {
     if (!dateStr) return "";
     if (Object.prototype.hasOwnProperty.call(drafts, dateStr)) {
@@ -533,61 +617,35 @@ export function LoyverseResumenVentas() {
       {rows.length > 0 && (
         <>
           <section className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 shadow-sm space-y-3">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50"
-                  title="Periodo anterior"
-                  aria-label="Periodo anterior"
-                  onClick={() => shiftRange(-1)}
-                >
-                  ‹
-                </button>
-                <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    type="date"
-                    value={rangeStart}
-                    onChange={(e) => onChangeRangeStart(e.target.value)}
-                    className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-gray-800"
-                  />
-                  <span className="text-gray-400 text-sm">—</span>
-                  <input
-                    type="date"
-                    value={rangeEnd}
-                    onChange={(e) => onChangeRangeEnd(e.target.value)}
-                    className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-gray-800"
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50"
-                  title="Periodo siguiente"
-                  aria-label="Periodo siguiente"
-                  onClick={() => shiftRange(1)}
-                >
-                  ›
-                </button>
-                <span className="text-sm text-gray-600 hidden sm:inline tabular-nums">
-                  {formatRangeLabelEs(rangeStart, rangeEnd)}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                  onClick={presetLast7}
-                >
-                  Últimos 7 días
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                  onClick={presetAll}
-                >
-                  Todo el historial
-                </button>
-              </div>
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <button
+                type="button"
+                className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
+                title="Periodo anterior"
+                aria-label="Periodo anterior"
+                onClick={() => shiftRange(-1)}
+              >
+                ‹
+              </button>
+              <LoyversePorPagoDateRange
+                rangeStart={rangeStart}
+                rangeEnd={rangeEnd}
+                dataMinYmd={importDateBounds.min}
+                dataMaxYmd={importDateBounds.max}
+                onApplyRange={(startYmd, endYmd) => {
+                  setRangeStart(startYmd);
+                  setRangeEnd(endYmd);
+                }}
+              />
+              <button
+                type="button"
+                className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
+                title="Periodo siguiente"
+                aria-label="Periodo siguiente"
+                onClick={() => shiftRange(1)}
+              >
+                ›
+              </button>
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
@@ -629,11 +687,8 @@ export function LoyverseResumenVentas() {
             <thead className="bg-gray-100 sticky top-0">
               <tr>
                 <th className="text-left px-3 py-2">Fecha</th>
-                <th className="text-right px-3 py-2 whitespace-nowrap">
-                  <span className="block">Tasa del día</span>
-                  <span className="block text-[10px] font-normal text-gray-500">
-                    (Bs)
-                  </span>
+                <th className="text-right px-3 py-2 whitespace-nowrap text-xs sm:text-sm font-medium">
+                  Tasa del día (Bs)
                 </th>
                 <th className="text-right px-3 py-2 whitespace-nowrap">
                   <span className="block">Ventas brutas</span>
@@ -822,6 +877,16 @@ export function LoyverseVentasPorPago() {
     setRangeBootstrapped(true);
   }, [rows, rangeBootstrapped]);
 
+  const { dataMinYmd, dataMaxYmd } = useMemo(() => {
+    const uniq = [
+      ...new Set(rows.map((r) => String(r.business_date || "").slice(0, 10))),
+    ]
+      .filter(Boolean)
+      .sort();
+    if (uniq.length === 0) return { dataMinYmd: "", dataMaxYmd: "" };
+    return { dataMinYmd: uniq[0], dataMaxYmd: uniq[uniq.length - 1] };
+  }, [rows]);
+
   const filteredRows = useMemo(() => {
     if (!rangeStart || !rangeEnd) return rows;
     const lo = minYmd(rangeStart, rangeEnd);
@@ -832,20 +897,25 @@ export function LoyverseVentasPorPago() {
     });
   }, [rows, rangeStart, rangeEnd]);
 
-  const { byMethod, total, rowsMissingRate } = useMemo(() => {
-    const map = new Map();
+  const { paymentDays, grandTotal, rowsMissingRate } = useMemo(() => {
+    const dateToPm = new Map();
     let missing = 0;
 
     for (const r of filteredRows) {
-      const pm = String(r.payment_method || "desconocido");
       const d = String(r.business_date || "").slice(0, 10);
-      const rateRaw = d ? ratesByDate[d] : null;
+      if (!d) continue;
+
+      const rateRaw = ratesByDate[d];
       const rateNum =
         rateRaw != null && Number.isFinite(Number(rateRaw))
           ? Number(rateRaw)
           : null;
 
-      const cur = map.get(pm) || {
+      const pm = String(r.payment_method || "desconocido");
+      if (!dateToPm.has(d)) dateToPm.set(d, new Map());
+      const pmMap = dateToPm.get(d);
+
+      const cur = pmMap.get(pm) || {
         payment_method: pm,
         txns: 0,
         importePago: 0,
@@ -881,51 +951,70 @@ export function LoyverseVentasPorPago() {
         missing += 1;
       }
 
-      map.set(pm, cur);
+      pmMap.set(pm, cur);
     }
 
-    let sumTx = 0;
-    let sumPago = 0;
-    let sumPagoBs = 0;
-    let sumRefTx = 0;
-    let sumRefAmt = 0;
-    let sumRefAmtBs = 0;
-    let sumNet = 0;
-    let sumNetBs = 0;
-    for (const v of map.values()) {
-      sumTx += v.txns;
-      sumPago += v.importePago;
-      sumPagoBs += v.importePagoBs;
-      sumRefTx += v.reembolsoTxns;
-      sumRefAmt += v.importeReembolso;
-      sumRefAmtBs += v.importeReembolsoBs;
-      sumNet += v.montoNeto;
-      sumNetBs += v.montoNetoBs;
-    }
+    const datesSorted = [...dateToPm.keys()].sort().reverse();
 
-    const sorted = [...map.values()].sort((a, b) => {
-      const da = paymentMethodSortKey(a.payment_method);
-      const db = paymentMethodSortKey(b.payment_method);
-      if (da !== db) return da - db;
-      return formatPaymentMethodLabel(a.payment_method).localeCompare(
-        formatPaymentMethodLabel(b.payment_method),
-        "es"
-      );
+    const emptyTotals = () => ({
+      txns: 0,
+      importePago: 0,
+      importePagoBs: 0,
+      reembolsoTxns: 0,
+      importeReembolso: 0,
+      importeReembolsoBs: 0,
+      montoNeto: 0,
+      montoNetoBs: 0,
     });
 
+    const paymentDaysList = datesSorted
+      .map((dateYmd) => {
+        const rateRaw = ratesByDate[dateYmd];
+        const rateBs =
+          rateRaw != null && Number.isFinite(Number(rateRaw))
+            ? Number(rateRaw)
+            : null;
+        const pmMap = dateToPm.get(dateYmd);
+        const methods = [...pmMap.values()].sort((a, b) => {
+          const da = paymentMethodSortKey(a.payment_method);
+          const db = paymentMethodSortKey(b.payment_method);
+          if (da !== db) return da - db;
+          return formatPaymentMethodLabel(a.payment_method).localeCompare(
+            formatPaymentMethodLabel(b.payment_method),
+            "es"
+          );
+        });
+        const dayTotals = methods.reduce((acc, m) => {
+          acc.txns += m.txns;
+          acc.importePago += m.importePago;
+          acc.importePagoBs += m.importePagoBs;
+          acc.reembolsoTxns += m.reembolsoTxns;
+          acc.importeReembolso += m.importeReembolso;
+          acc.importeReembolsoBs += m.importeReembolsoBs;
+          acc.montoNeto += m.montoNeto;
+          acc.montoNetoBs += m.montoNetoBs;
+          return acc;
+        }, emptyTotals());
+        return { dateYmd, rateBs, methods, dayTotals };
+      })
+      .filter((day) => day.methods.length > 0);
+
+    const grand = paymentDaysList.reduce((acc, day) => {
+      acc.txns += day.dayTotals.txns;
+      acc.importePago += day.dayTotals.importePago;
+      acc.importePagoBs += day.dayTotals.importePagoBs;
+      acc.reembolsoTxns += day.dayTotals.reembolsoTxns;
+      acc.importeReembolso += day.dayTotals.importeReembolso;
+      acc.importeReembolsoBs += day.dayTotals.importeReembolsoBs;
+      acc.montoNeto += day.dayTotals.montoNeto;
+      acc.montoNetoBs += day.dayTotals.montoNetoBs;
+      return acc;
+    }, emptyTotals());
+
     return {
-      byMethod: sorted,
+      paymentDays: paymentDaysList,
+      grandTotal: grand,
       rowsMissingRate: missing,
-      total: {
-        txns: sumTx,
-        importePago: sumPago,
-        importePagoBs: sumPagoBs,
-        reembolsoTxns: sumRefTx,
-        importeReembolso: sumRefAmt,
-        importeReembolsoBs: sumRefAmtBs,
-        montoNeto: sumNet,
-        montoNetoBs: sumNetBs,
-      },
     };
   }, [filteredRows, ratesByDate]);
 
@@ -936,43 +1025,10 @@ export function LoyverseVentasPorPago() {
     setRangeEnd(addDaysYmd(rangeEnd, direction * step));
   }
 
-  function presetLast7() {
-    const uniq = [
-      ...new Set(rows.map((r) => String(r.business_date || "").slice(0, 10))),
-    ]
-      .filter(Boolean)
-      .sort();
-    if (uniq.length === 0) return;
-    const end = uniq[uniq.length - 1];
-    const start = addDaysYmd(end, -6);
-    const lo = uniq[0];
-    setRangeStart(start < lo ? lo : start);
-    setRangeEnd(end);
-  }
-
-  function presetAll() {
-    const uniq = [
-      ...new Set(rows.map((r) => String(r.business_date || "").slice(0, 10))),
-    ]
-      .filter(Boolean)
-      .sort();
-    if (uniq.length === 0) return;
-    setRangeStart(uniq[0]);
-    setRangeEnd(uniq[uniq.length - 1]);
-  }
-
-  function onChangeRangeStart(v) {
-    setRangeStart(v);
-    if (rangeEnd && v > rangeEnd) setRangeEnd(v);
-  }
-
-  function onChangeRangeEnd(v) {
-    setRangeEnd(v);
-    if (rangeStart && v < rangeStart) setRangeStart(v);
-  }
-
   function exportCsv() {
     const header = [
+      "Fecha",
+      "Tasa del día (Bs)",
       "Tipo de pago",
       "Transacciones de pago",
       "Importe del pago (USD)",
@@ -984,32 +1040,42 @@ export function LoyverseVentasPorPago() {
       "Monto neto (Bs)",
     ];
     const lines = [header.join(";")];
-    for (const r of byMethod) {
-      lines.push(
-        [
-          formatPaymentMethodLabel(r.payment_method),
-          r.txns,
-          r.importePago.toFixed(2),
-          r.importePagoBs.toFixed(2),
-          r.reembolsoTxns,
-          r.importeReembolso.toFixed(2),
-          r.importeReembolsoBs.toFixed(2),
-          r.montoNeto.toFixed(2),
-          r.montoNetoBs.toFixed(2),
-        ].join(";")
-      );
+    for (const day of paymentDays) {
+      const tasa =
+        day.rateBs != null && Number.isFinite(day.rateBs)
+          ? String(day.rateBs)
+          : "";
+      for (const r of day.methods) {
+        lines.push(
+          [
+            day.dateYmd,
+            tasa,
+            formatPaymentMethodLabel(r.payment_method),
+            r.txns,
+            r.importePago.toFixed(2),
+            r.importePagoBs.toFixed(2),
+            r.reembolsoTxns,
+            r.importeReembolso.toFixed(2),
+            r.importeReembolsoBs.toFixed(2),
+            r.montoNeto.toFixed(2),
+            r.montoNetoBs.toFixed(2),
+          ].join(";")
+        );
+      }
     }
     lines.push(
       [
         "Total",
-        total.txns,
-        total.importePago.toFixed(2),
-        total.importePagoBs.toFixed(2),
-        total.reembolsoTxns,
-        total.importeReembolso.toFixed(2),
-        total.importeReembolsoBs.toFixed(2),
-        total.montoNeto.toFixed(2),
-        total.montoNetoBs.toFixed(2),
+        "",
+        "",
+        grandTotal.txns,
+        grandTotal.importePago.toFixed(2),
+        grandTotal.importePagoBs.toFixed(2),
+        grandTotal.reembolsoTxns,
+        grandTotal.importeReembolso.toFixed(2),
+        grandTotal.importeReembolsoBs.toFixed(2),
+        grandTotal.montoNeto.toFixed(2),
+        grandTotal.montoNetoBs.toFixed(2),
       ].join(";")
     );
     const blob = new Blob(["\ufeff" + lines.join("\n")], {
@@ -1024,12 +1090,6 @@ export function LoyverseVentasPorPago() {
 
   return (
     <div className="px-4 pt-2 pb-8 space-y-3 w-full max-w-6xl">
-      <p className="text-[11px] text-gray-500 leading-snug max-w-3xl">
-        Estructura alineada con Loyverse y el Excel. USD arriba; Bs en naranja
-        usando la misma tasa del día que guardas en «Resumen de ventas» para
-        cada fecha de cada fila importada (USD × tasa de ese día). Si el archivo
-        no trae fecha por fila, se usa la del nombre del archivo.
-      </p>
       {err && <p className="text-sm text-red-600">{err}</p>}
       {loading && <p className="text-sm text-gray-500">Cargando…</p>}
       {!loading && rows.length === 0 && !err && (
@@ -1040,65 +1100,45 @@ export function LoyverseVentasPorPago() {
       )}
       {rows.length > 0 && (
         <>
-          <section className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-            <div className="flex items-center gap-2 bg-zm-green px-4 py-3 text-white">
+          <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="flex items-center gap-2 bg-zm-green px-4 py-3 text-white rounded-t-xl">
               <h2 className="text-sm font-semibold tracking-tight">
                 Ventas por tipo de pago
               </h2>
             </div>
             <div className="p-3 sm:p-4 space-y-3 border-b border-gray-100">
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
                   <button
                     type="button"
-                    className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50"
+                    className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
                     title="Periodo anterior"
                     aria-label="Periodo anterior"
                     onClick={() => shiftRange(-1)}
                   >
                     ‹
                   </button>
-                  <input
-                    type="date"
-                    value={rangeStart}
-                    onChange={(e) => onChangeRangeStart(e.target.value)}
-                    className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-gray-800"
-                  />
-                  <span className="text-gray-400 text-sm">—</span>
-                  <input
-                    type="date"
-                    value={rangeEnd}
-                    onChange={(e) => onChangeRangeEnd(e.target.value)}
-                    className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-gray-800"
+                  <LoyversePorPagoDateRange
+                    rangeStart={rangeStart}
+                    rangeEnd={rangeEnd}
+                    dataMinYmd={dataMinYmd}
+                    dataMaxYmd={dataMaxYmd}
+                    onApplyRange={(startYmd, endYmd) => {
+                      setRangeStart(startYmd);
+                      setRangeEnd(endYmd);
+                    }}
                   />
                   <button
                     type="button"
-                    className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50"
+                    className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
                     title="Periodo siguiente"
                     aria-label="Periodo siguiente"
                     onClick={() => shiftRange(1)}
                   >
                     ›
                   </button>
-                  <span className="text-sm text-gray-600 hidden sm:inline tabular-nums">
-                    {formatRangeLabelEs(rangeStart, rangeEnd)}
-                  </span>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                    onClick={presetLast7}
-                  >
-                    Últimos 7 días
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                    onClick={presetAll}
-                  >
-                    Todo el historial
-                  </button>
+                <div className="flex flex-wrap gap-2 shrink-0">
                   <button
                     type="button"
                     className="rounded-lg border border-zm-green/40 bg-white px-3 py-1.5 text-xs font-semibold text-zm-green hover:bg-zm-green/5"
@@ -1110,90 +1150,220 @@ export function LoyverseVentasPorPago() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="min-w-[720px] w-full text-sm">
+            <div className="w-full max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+              <table className="w-full min-w-[800px] max-w-full table-fixed border-collapse text-sm sm:text-base">
+                <colgroup>
+                  <col className="w-[11%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[13%]" />
+                </colgroup>
                 <thead className="bg-gray-100">
                   <tr>
-                    <th className="text-left px-3 py-2 font-medium">
-                      Tipo de pago
+                    <th
+                      scope="col"
+                      className="text-center px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom"
+                    >
+                      Fecha
                     </th>
-                    <th className="text-right px-3 py-2 font-medium whitespace-nowrap">
-                      Transacciones de pago
+                    <th
+                      scope="col"
+                      className="text-center px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight whitespace-nowrap"
+                      aria-label="Tasa del día en bolívares"
+                    >
+                      Tasa del día
                     </th>
-                    <th className="text-right px-3 py-2 font-medium whitespace-nowrap">
-                      <span className="block">Importe del pago</span>
-                      <span className="block text-[10px] font-normal text-gray-500">
-                        (USD / Bs)
-                      </span>
+                    <th
+                      scope="col"
+                      className="text-center px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight"
+                      aria-label="Tipo de pago"
+                    >
+                      <span className="hidden min-[400px]:inline">Tipo de pago</span>
+                      <span className="min-[400px]:hidden">Tipo</span>
                     </th>
-                    <th className="text-right px-3 py-2 font-medium whitespace-nowrap">
-                      Reembolso de transacciones
+                    <th
+                      scope="col"
+                      className="text-center px-1 py-1.5 sm:px-1.5 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight"
+                      aria-label="Transacciones de pago"
+                    >
+                      <span className="hidden sm:inline">Transacciones</span>
+                      <span className="sm:hidden">Txns</span>
                     </th>
-                    <th className="text-right px-3 py-2 font-medium whitespace-nowrap">
-                      <span className="block">Importe de reembolsos</span>
-                      <span className="block text-[10px] font-normal text-gray-500">
-                        (USD / Bs)
-                      </span>
+                    <th
+                      scope="col"
+                      className="text-center px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight whitespace-nowrap"
+                      aria-label="Importe del pago en dólares y bolívares"
+                    >
+                      Imp. pago
                     </th>
-                    <th className="text-right px-3 py-2 font-medium whitespace-nowrap">
-                      <span className="block">Monto neto</span>
-                      <span className="block text-[10px] font-normal text-gray-500">
-                        (USD / Bs)
-                      </span>
+                    <th
+                      scope="col"
+                      className="text-center px-1 py-1.5 sm:px-1.5 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight"
+                      aria-label="Reembolso de transacciones"
+                    >
+                      <span className="hidden sm:inline">Reembolsos</span>
+                      <span className="sm:hidden">Reemb.</span>
+                    </th>
+                    <th
+                      scope="col"
+                      className="text-center px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight whitespace-nowrap"
+                      aria-label="Importe de reembolsos en dólares y bolívares"
+                    >
+                      Imp. reemb.
+                    </th>
+                    <th
+                      scope="col"
+                      className="text-center px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight whitespace-nowrap"
+                      aria-label="Monto neto en dólares y bolívares"
+                    >
+                      Monto neto
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {byMethod.map((r) => (
-                    <tr
-                      key={r.payment_method}
-                      className="border-t border-gray-100 hover:bg-gray-50"
-                    >
-                      <td className="px-3 py-2">
-                        {formatPaymentMethodLabel(r.payment_method)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {r.txns}
-                      </td>
-                      <UsdBsAggregateCell
-                        usdValue={r.importePago}
-                        bsSum={r.importePagoBs}
-                      />
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {r.reembolsoTxns}
-                      </td>
-                      <UsdBsAggregateCell
-                        usdValue={r.importeReembolso}
-                        bsSum={r.importeReembolsoBs}
-                      />
-                      <UsdBsAggregateCell
-                        usdValue={r.montoNeto}
-                        bsSum={r.montoNetoBs}
-                        variant="emphasis"
-                      />
-                    </tr>
+                  {paymentDays.map((day) => (
+                    <Fragment key={day.dateYmd}>
+                      {day.methods.map((r, idx) => (
+                        <tr
+                          key={`${day.dateYmd}-${r.payment_method}`}
+                          className="border-t border-gray-100 hover:bg-gray-50"
+                        >
+                          {idx === 0 && (
+                            <td
+                              rowSpan={Math.max(1, day.methods.length)}
+                              className="px-1.5 py-2 sm:px-2 align-top border-r border-gray-100 text-center"
+                            >
+                              <span className="block min-w-0 text-sm sm:text-base font-semibold leading-snug text-gray-900">
+                                {formatDateShort(day.dateYmd)}
+                              </span>
+                            </td>
+                          )}
+                          {idx === 0 && (
+                            <td
+                              rowSpan={Math.max(1, day.methods.length)}
+                              className="px-1.5 py-2 sm:px-2 align-top text-center border-r border-gray-100"
+                            >
+                              {day.rateBs != null &&
+                              Number.isFinite(day.rateBs) ? (
+                                <span className="text-base sm:text-lg font-semibold tabular-nums text-gray-900">
+                                  {formatBs(day.rateBs)}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400 text-lg">—</span>
+                              )}
+                            </td>
+                          )}
+                          <td className="px-1.5 py-2 sm:px-2 min-w-0 align-middle text-center">
+                            <div className="flex justify-center">
+                              <PaymentMethodWithIcon paymentMethod={r.payment_method} />
+                            </div>
+                          </td>
+                          <td className="px-1 py-2 sm:px-1.5 align-middle">
+                            <div className={paymentCountInnerClass}>{r.txns}</div>
+                          </td>
+                          <UsdDualCell
+                            usdValue={r.importePago}
+                            rateBs={day.rateBs}
+                            numericSize="large"
+                            tightPad
+                          />
+                          <td className="px-1 py-2 sm:px-1.5 align-middle">
+                            <div className={paymentCountInnerClass}>
+                              {r.reembolsoTxns}
+                            </div>
+                          </td>
+                          <UsdDualCell
+                            usdValue={r.importeReembolso}
+                            rateBs={day.rateBs}
+                            numericSize="large"
+                            tightPad
+                          />
+                          <UsdDualCell
+                            usdValue={r.montoNeto}
+                            rateBs={day.rateBs}
+                            variant="emphasis"
+                            numericSize="large"
+                            tightPad
+                          />
+                        </tr>
+                      ))}
+                      <tr className="border-t border-gray-200 bg-zm-cream/70 text-gray-900">
+                        <td
+                          colSpan={3}
+                          className="px-1.5 py-2 sm:px-2 text-center text-sm sm:text-base font-semibold leading-snug text-zm-sidebar"
+                        >
+                          Subtotal {formatDateShort(day.dateYmd)}
+                        </td>
+                        <td className="px-1 py-2 sm:px-1.5 align-middle">
+                          <div className={paymentCountInnerClass}>
+                            {day.dayTotals.txns}
+                          </div>
+                        </td>
+                        <UsdBsAggregateCell
+                          usdValue={day.dayTotals.importePago}
+                          bsSum={day.dayTotals.importePagoBs}
+                          numericSize="large"
+                          tightPad
+                        />
+                        <td className="px-1 py-2 sm:px-1.5 align-middle">
+                          <div className={paymentCountInnerClass}>
+                            {day.dayTotals.reembolsoTxns}
+                          </div>
+                        </td>
+                        <UsdBsAggregateCell
+                          usdValue={day.dayTotals.importeReembolso}
+                          bsSum={day.dayTotals.importeReembolsoBs}
+                          numericSize="large"
+                          tightPad
+                        />
+                        <UsdBsAggregateCell
+                          usdValue={day.dayTotals.montoNeto}
+                          bsSum={day.dayTotals.montoNetoBs}
+                          variant="emphasis"
+                          numericSize="large"
+                          tightPad
+                        />
+                      </tr>
+                    </Fragment>
                   ))}
-                  {byMethod.length > 0 && (
-                    <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                      <td className="px-3 py-2">Total</td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {total.txns}
+                  {paymentDays.length > 0 && (
+                    <tr className="border-t-2 border-zm-green/25 bg-zm-green/10 text-gray-900">
+                      <td
+                        colSpan={3}
+                        className="px-1.5 py-2.5 sm:px-2 text-center text-sm sm:text-base font-bold text-zm-sidebar"
+                      >
+                        Total del rango
+                      </td>
+                      <td className="px-1 py-2.5 sm:px-1.5 align-middle">
+                        <div className={paymentCountInnerClass}>{grandTotal.txns}</div>
                       </td>
                       <UsdBsAggregateCell
-                        usdValue={total.importePago}
-                        bsSum={total.importePagoBs}
+                        usdValue={grandTotal.importePago}
+                        bsSum={grandTotal.importePagoBs}
+                        numericSize="large"
+                        tightPad
                       />
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {total.reembolsoTxns}
+                      <td className="px-1 py-2.5 sm:px-1.5 align-middle">
+                        <div className={paymentCountInnerClass}>
+                          {grandTotal.reembolsoTxns}
+                        </div>
                       </td>
                       <UsdBsAggregateCell
-                        usdValue={total.importeReembolso}
-                        bsSum={total.importeReembolsoBs}
+                        usdValue={grandTotal.importeReembolso}
+                        bsSum={grandTotal.importeReembolsoBs}
+                        numericSize="large"
+                        tightPad
                       />
                       <UsdBsAggregateCell
-                        usdValue={total.montoNeto}
-                        bsSum={total.montoNetoBs}
+                        usdValue={grandTotal.montoNeto}
+                        bsSum={grandTotal.montoNetoBs}
                         variant="emphasis"
+                        numericSize="large"
+                        tightPad
                       />
                     </tr>
                   )}
@@ -1202,14 +1372,14 @@ export function LoyverseVentasPorPago() {
             </div>
           </section>
           <p className="text-[10px] text-gray-400">
-            La tabla resume todas las filas importadas en el rango (puede haber
-            varias por método y día). Los Bs suman (USD de cada fila × tasa del
-            día de esa fila en Resumen de ventas).
+            Cada día usa la tasa guardada en «Resumen de ventas» para esa fecha.
+            Los Bs son USD × tasa del día (varios días en el rango pueden tener
+            tasas distintas).
             {rowsMissingRate > 0 && (
               <span className="block mt-0.5 text-amber-700/90">
-                {rowsMissingRate} fila(s) con montos en USD no tienen tasa guardada
-                para su fecha: complete la tasa en Resumen de ventas para
-                incluirlas en los totales Bs.
+                {rowsMissingRate} fila(s) importada(s) con montos en USD no tienen
+                tasa guardada para su fecha: complete la tasa en Resumen de ventas
+                para incluirlas en los totales Bs.
               </span>
             )}
           </p>

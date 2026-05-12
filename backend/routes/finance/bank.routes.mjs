@@ -13,6 +13,7 @@ import {
   getBankMovementCategoryOptions,
   updateBankMovementCategory,
   reassignImportBatchAccount,
+  reapplyBankClassificationToAccount,
 } from "../../finance/services/bankImportService.mjs";
 
 const router = express.Router();
@@ -59,6 +60,20 @@ router.get("/movement-categories", async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Error cargando categorías.",
+      error: error.message,
+    });
+  }
+});
+
+router.post("/movements/by-account/:bankAccountId/reclassify", async (req, res) => {
+  try {
+    const data = await reapplyBankClassificationToAccount(req.params.bankAccountId);
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error("❌ Error reclasificando movimientos:", error);
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Error reclasificando movimientos.",
       error: error.message,
     });
   }

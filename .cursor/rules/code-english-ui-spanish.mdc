@@ -1,0 +1,23 @@
+---
+description: Código e identificadores en inglés; copy visible de la app en español
+alwaysApply: true
+---
+
+# Inglés en código, español en la interfaz
+
+## Código y archivos (inglés)
+
+- **Identificadores** en inglés: nombres de variables, funciones, clases, hooks, props técnicas, tipos, constantes de código (no de negocio visible), enums internos.
+- **Comentarios y docstrings** en el código en inglés.
+- **Nombres de archivos y carpetas** de código fuente en inglés (p. ej. `UserProfile.jsx`, `useCart.js`), salvo que el proyecto ya use un archivo legado que no convenga renombrar en ese cambio.
+- Mensajes orientados solo a desarrolladores (logs técnicos, asserts) en inglés.
+
+## Lo que ve el usuario (español)
+
+- **Copy de UI**: títulos, párrafos, etiquetas de formulario, textos de botones, enlaces, placeholders, tooltips, empty states, textos de modales y toasts.
+- **Errores y avisos mostrados al usuario** (validación, fallos de red, permisos) en español claro y consistente con el tono del sitio.
+- **Atributos visibles o leídos por asistencia** cuando describen contenido al usuario (`aria-label`, `alt` descriptivo de contenido de producto, etc.) en español.
+
+## Límite
+
+- Claves de API, nombres de campos en JSON, slugs en URL y valores enviados al backend siguen las convenciones del backend/contrato (suelen ser inglés o el formato acordado); el **texto renderizado** al usuario sigue siendo español.

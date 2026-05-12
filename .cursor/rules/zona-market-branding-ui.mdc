@@ -1,0 +1,15 @@
+---
+description: UI nueva con branding Zona Market (colores, tipografía, patrones como Ventas por tipo de pago).
+alwaysApply: true
+---
+
+# Branding Zona Market en lo que se construya
+
+Cuando el usuario pida **construir** o **diseñar** interfaz (páginas, tablas, formularios, botones, cards, admin, flujos Zona Market):
+
+1. **Colores**: usar tokens Tailwind del tema `zm` definidos en `frontend/tailwind.config.mjs` — `zm-green` (`#4F772D`), `zm-green-dark`, `zm-sidebar`, `zm-yellow`, `zm-red`, `zm-cream`. Evitar verdes genéricos tipo `emerald-*` para acciones/acentos si existe equivalente `zm-*`.
+2. **Tipografía**: en superficies Zona Market / admin alineadas con la marca, usar **`font-zm`** (Poppins) cuando el resto de esa vista ya lo use; tamaños coherentes con **`text-sm sm:text-base`** (y jerarquías `text-xs` para metadatos) como en reportes finanzas.
+3. **Referencia visual**: tomar como guía la sección **«Ventas por tipo de pago»** en `frontend/src/pages/admin/finance/LoyverseVentasTablas.jsx` — tabla con `min-w` + scroll horizontal si aplica, cabeceras centradas o alineadas con cuidado, filas de subtotal `bg-zm-cream/70` / `text-zm-sidebar`, total `bg-zm-green/10` / `border-zm-green/25`, botones tipo **EXPORTAR** (`border-zm-green/40`, `text-zm-green`).
+4. **Responsive**: seguir la regla del proyecto `ui-responsive.mdc` (mobile-first); no romper el viewport con anchos fijos sin `max-w` / scroll controlado.
+
+Backend u otros archivos sin UI no necesitan clases Tailwind; esta regla aplica a **componentes y páginas con interfaz**.

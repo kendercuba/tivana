@@ -45,6 +45,37 @@ function formatPercent(value) {
   }).format(n)} %`;
 }
 
+/** Enteros como en Excel Loyverse (transacciones, reembolsos). */
+function formatIntCell(value) {
+  if (value == null || value === "") return "—";
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return "—";
+  return new Intl.NumberFormat("es-VE", { maximumFractionDigits: 0 }).format(
+    n
+  );
+}
+
+/** Etiqueta «Tipo de pago» tal cual el archivo; instantáneas viejas sin campo usan raw_row o código interno. */
+function paymentTipoFromRow(row) {
+  if (row.payment_type_label) return row.payment_type_label;
+  const raw = row.raw_row;
+  if (raw && typeof raw === "object") {
+    for (const [k, v] of Object.entries(raw)) {
+      if (String(k).startsWith("_")) continue;
+      const nk = String(k)
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ");
+      if (nk.includes("tipo") && nk.includes("pago")) {
+        if (v !== "" && v != null) return String(v).trim();
+      }
+    }
+  }
+  if (row.payment_method) return String(row.payment_method);
+  return "—";
+}
+
 /** Etiqueta en español según código guardado en `loyverse_detected_format`. */
 function formatLoyverseReportKind(code) {
   if (!code) return "—";
@@ -167,6 +198,15 @@ export default function LoyverseVentasCargar() {
               <option value="by_item">Ventas por artículo</option>
             </select>
           </div>
+
+          {(reportHint === "by_payment" || reportHint === "auto") && (
+            <p className="text-[11px] text-amber-950/90 bg-amber-50 border border-amber-100 rounded-md px-2.5 py-2 leading-snug">
+              <strong>Ventas por tipo de pago:</strong> el nombre del archivo no puede
+              incluir dos fechas distintas (export de rango). Sube un archivo por día.
+              Si el nombre repite el mismo día dos veces (p. ej.{" "}
+              <span className="font-mono">2026-05-01-2026-05-01</span>), sí se acepta.
+            </p>
+          )}
 
           <div>
             <span className="block text-xs font-medium text-gray-600 mb-1">
@@ -376,6 +416,73 @@ export default function LoyverseVentasCargar() {
               apareciendo aquí.
             </p>
           )}
+          {previewRows.length > 0 && previewKind === "payment_breakdown" && (
+            <div className="overflow-x-auto max-h-[min(420px,52vh)] overflow-y-auto">
+              <table className="min-w-[880px] w-full text-sm">
+                <thead className="bg-gray-100 sticky top-0">
+                  <tr>
+                    <th className="text-left px-3 py-2 whitespace-nowrap">
+                      Tipo de pago
+                    </th>
+                    <th className="text-right px-3 py-2 whitespace-nowrap">
+                      Transacciones de pago
+                    </th>
+                    <th className="text-right px-3 py-2 whitespace-nowrap">
+                      Monto de pagos
+                    </th>
+                    <th className="text-right px-3 py-2 whitespace-nowrap">
+                      Reembolso de transacciones
+                    </th>
+                    <th className="text-right px-3 py-2 whitespace-nowrap">
+                      Importe del reembolsos
+                    </th>
+                    <th className="text-right px-3 py-2 whitespace-nowrap">
+                      Monto neto
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewRows.map((row, idx) => (
+                    <tr
+                      key={
+                        row.id != null ? row.id : `snap-pay-${selectedBatchId}-${idx}`
+                      }
+                      className="border-t border-gray-100"
+                    >
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {paymentTipoFromRow(row)}
+                      </td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums">
+                        {formatIntCell(row.transactions_count)}
+                      </td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums">
+                        {row.gross_sales != null
+                          ? formatBs(row.gross_sales)
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums">
+                        {formatIntCell(
+                          row.payment_refund_txn_count ??
+                            row.raw_row?._loyverse_refund_txn_count
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums">
+                        {row.payment_refund_amount != null
+                          ? formatBs(row.payment_refund_amount)
+                          : row.raw_row?._loyverse_refund_amount != null
+                            ? formatBs(row.raw_row._loyverse_refund_amount)
+                            : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums">
+                        {row.net_sales != null ? formatBs(row.net_sales) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {previewRows.length > 0 && previewKind === "daily_summary" && (
             <div className="overflow-x-auto max-h-[min(420px,52vh)] overflow-y-auto">
               <table className="min-w-[920px] w-full text-sm">
@@ -452,7 +559,9 @@ export default function LoyverseVentasCargar() {
             </div>
           )}
 
-          {previewRows.length > 0 && previewKind !== "daily_summary" && (
+          {previewRows.length > 0 &&
+            previewKind !== "daily_summary" &&
+            previewKind !== "payment_breakdown" && (
             <div className="overflow-x-auto max-h-[min(320px,40vh)] overflow-y-auto">
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-100 sticky top-0">
