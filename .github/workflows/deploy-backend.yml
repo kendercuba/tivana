@@ -23,9 +23,21 @@ jobs:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
-          # PM2 runs from /var/www/backend (pm2 describe tivana-backend → exec cwd / script path).
-          # Pulls under /root/tivana-backend never updated the process that serves api.tivana.me.
+          # Git lives in /root/tivana-backend (monorepo). PM2 runs /var/www/backend (no .git there).
+          # Pull then sync backend/ → /var/www/backend, refresh deps, restart.
           script: |
-            cd /var/www/backend
+            set -e
+            cd /root/tivana-backend
             git pull origin main
+            if [ -d backend ]; then
+              SRC="/root/tivana-backend/backend/"
+            else
+              SRC="/root/tivana-backend/"
+            fi
+            rsync -a "${SRC}" /var/www/backend/ \
+              --exclude='.env' \
+              --exclude='node_modules' \
+              --exclude='uploads'
+            cd /var/www/backend
+            if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
             pm2 restart tivana-backend
