@@ -26,6 +26,8 @@ import LoyverseImport from './pages/admin/finance/LoyverseImport.jsx';
 import ZonaMarketLayout from './pages/zonamarket/ZonaMarketLayout.jsx';
 import ZonaMarketHome from './pages/zonamarket/ZonaMarketHome.jsx';
 import ZonaMarketAdminLayout from './components/zonamarket/ZonaMarketAdminLayout.jsx';
+import ZonaMarketArticleList from './pages/zonamarket/admin/ZonaMarketArticleList.jsx';
+import ZonaMarketArticleCategories from './pages/zonamarket/admin/ZonaMarketArticleCategories.jsx';
 import { FinanceBasePathProvider } from './contexts/FinanceBasePathContext.jsx';
 
 /** Última ruta: evita pantalla en blanco si la URL no coincide con ninguna ruta definida. */
@@ -172,6 +174,15 @@ function App() {
           element={
             <Navigate to="/zonamarket/admin/finance/dashboard" replace />
           }
+        />
+        <Route
+          path="articles"
+          element={<Navigate to="/zonamarket/admin/articles/list" replace />}
+        />
+        <Route path="articles/list" element={<ZonaMarketArticleList />} />
+        <Route
+          path="articles/categories"
+          element={<ZonaMarketArticleCategories />}
         />
         <Route path="finance/dashboard" element={<FinanceDashboard />} />
         <Route path="finance/loyverse" element={<LoyverseImport />} />

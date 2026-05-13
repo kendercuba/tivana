@@ -6,13 +6,14 @@ import {
   saveLoyverseDailyRate,
   validateLoyverseReportHint,
 } from "../../../api/admin/finance/loyverseApi";
+import { filesFromFileList } from "../../../utils/filesFromFileList.js";
+import LoyversePorPagoDateRange from "../../../components/admin/finance/LoyversePorPagoDateRange.jsx";
+import LoyverseImportBatchHistory from "../../../components/admin/finance/LoyverseImportBatchHistory.jsx";
+import useLoyverseImport from "../../../hooks/admin/finance/useLoyverseImport";
 
 /** Excel/CSV Loyverse; el sistema distingue el reporte por cabeceras, no por extensión. */
 const LOYVERSE_UPLOAD_ACCEPT =
   ".xls,.xlsx,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-import LoyversePorPagoDateRange from "../../../components/admin/finance/LoyversePorPagoDateRange.jsx";
-import LoyverseImportBatchHistory from "../../../components/admin/finance/LoyverseImportBatchHistory.jsx";
-import useLoyverseImport from "../../../hooks/admin/finance/useLoyverseImport";
 
 function formatDateShort(value) {
   if (!value) return "—";
@@ -43,6 +44,16 @@ function formatUsd(value) {
     currency: "USD",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
+  }).format(n);
+}
+
+function formatQtySold(value) {
+  if (value == null || value === "") return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return new Intl.NumberFormat("es-VE", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3,
   }).format(n);
 }
 
@@ -378,7 +389,7 @@ export function LoyverseResumenVentas({
   onHighlightBatchIdChange,
 } = {}) {
   const [topTab, setTopTab] = useState("tabla");
-  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadFiles, setUploadFiles] = useState([]);
   const [uploadInputKey, setUploadInputKey] = useState(0);
   const [fileHintError, setFileHintError] = useState(null);
   const [fileHintValidating, setFileHintValidating] = useState(false);
@@ -445,7 +456,7 @@ export function LoyverseResumenVentas({
     const batchId = importResult.data.importBatchId;
     onHighlightBatchIdChange?.(batchId);
     setHistoryRefresh((n) => n + 1);
-    setUploadFile(null);
+    setUploadFiles([]);
     setUploadInputKey((k) => k + 1);
 
     let cancelled = false;
@@ -655,30 +666,32 @@ export function LoyverseResumenVentas({
   }
 
   async function handleResumenFileSelected(e) {
-    const file = e.target.files?.[0] ?? null;
+    const picked = filesFromFileList(e.target.files);
     setFileHintError(null);
-    if (!file) {
-      setUploadFile(null);
+    if (picked.length === 0) {
+      setUploadFiles([]);
       return;
     }
     setFileHintValidating(true);
     try {
-      const v = await validateLoyverseReportHint({
-        file,
-        reportHint: "daily_summary",
-      });
-      if (!v.ok) {
-        setFileHintError(
-          v.message || "El archivo no corresponde al resumen de ventas."
-        );
-        setUploadFile(null);
-        setUploadInputKey((k) => k + 1);
-        return;
+      for (const file of picked) {
+        const v = await validateLoyverseReportHint({
+          file,
+          reportHint: "daily_summary",
+        });
+        if (!v.ok) {
+          setFileHintError(
+            `${file.name}: ${v.message || "No corresponde al resumen de ventas."}`
+          );
+          setUploadFiles([]);
+          setUploadInputKey((k) => k + 1);
+          return;
+        }
       }
-      setUploadFile(file);
+      setUploadFiles(picked);
     } catch (err) {
       setFileHintError(err.message || "No se pudo validar el archivo.");
-      setUploadFile(null);
+      setUploadFiles([]);
       setUploadInputKey((k) => k + 1);
     } finally {
       setFileHintValidating(false);
@@ -687,11 +700,11 @@ export function LoyverseResumenVentas({
 
   function handleResumenExcelSubmit(e) {
     e.preventDefault();
-    if (!uploadFile) {
+    if (uploadFiles.length === 0) {
       window.alert("Selecciona un archivo Excel o CSV exportado desde Loyverse.");
       return;
     }
-    handleImport({ file: uploadFile, reportHint: "daily_summary" });
+    handleImport({ files: uploadFiles, reportHint: "daily_summary" });
   }
 
   async function commitRate(dateStr) {
@@ -823,24 +836,27 @@ export function LoyverseResumenVentas({
                         aria-hidden
                         strokeWidth={2.25}
                       />
-                      <span>Seleccionar archivo</span>
+                      <span>Seleccionar archivo(s)</span>
                       <input
                         key={uploadInputKey}
                         type="file"
+                        multiple
                         accept={LOYVERSE_UPLOAD_ACCEPT}
                         className="sr-only"
-                        aria-label="Seleccionar archivo del reporte Resumen de ventas Loyverse"
+                        aria-label="Seleccionar uno o varios archivos del reporte Resumen de ventas Loyverse"
                         disabled={fileHintValidating}
                         onChange={handleResumenFileSelected}
                       />
                     </label>
-                    {uploadFile && (
+                    {uploadFiles.length > 0 && (
                       <>
                         <span
-                          className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[14rem] font-medium"
-                          title={uploadFile.name}
+                          className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
+                          title={uploadFiles.map((f) => f.name).join("\n")}
                         >
-                          {uploadFile.name}
+                          {uploadFiles.length === 1
+                            ? uploadFiles[0].name
+                            : `${uploadFiles.length} archivos seleccionados`}
                         </span>
                         <button
                           type="submit"
@@ -858,18 +874,13 @@ export function LoyverseResumenVentas({
                   <p className="text-sm text-zm-red">{importError}</p>
                 )}
                 {fileHintValidating && (
-                  <p className="text-xs text-gray-600">Validando archivo…</p>
+                  <p className="text-xs text-gray-600">Validando archivos…</p>
                 )}
                 {fileHintError && (
                   <p className="text-sm text-zm-red" role="alert">
                     {fileHintError}
                   </p>
                 )}
-                <p className="text-[11px] text-gray-500 leading-snug max-w-xl">
-                  El selector solo filtra por tipo de archivo (Excel/CSV). Aquí debe ser el
-                  export «Resumen de ventas» de Loyverse; el tipo de reporte se comprueba al
-                  elegir el archivo.
-                </p>
 
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
                   <SummaryTotalCard
@@ -899,9 +910,9 @@ export function LoyverseResumenVentas({
                 </div>
               </section>
 
-              <div className="overflow-x-auto border border-zm-green/15 rounded-lg bg-white shadow-sm">
+              <div className="max-h-[min(65vh,36rem)] sm:max-h-[min(70vh,42rem)] overflow-y-auto overflow-x-auto border border-zm-green/15 rounded-lg bg-white shadow-sm [-webkit-overflow-scrolling:touch]">
                 <table className="min-w-[920px] w-full text-sm">
-                  <thead className="bg-zm-cream/80 sticky top-0">
+                  <thead className="sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream">
                     <tr>
                       <th className="text-left px-3 py-2">Fecha</th>
                       <th className="text-right px-3 py-2 whitespace-nowrap text-xs sm:text-sm font-medium">
@@ -1053,7 +1064,7 @@ export function LoyverseVentasPorPago({
   onHighlightBatchIdChange,
 } = {}) {
   const [topTab, setTopTab] = useState("tabla");
-  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadFiles, setUploadFiles] = useState([]);
   const [uploadInputKey, setUploadInputKey] = useState(0);
   const [fileHintError, setFileHintError] = useState(null);
   const [fileHintValidating, setFileHintValidating] = useState(false);
@@ -1118,7 +1129,7 @@ export function LoyverseVentasPorPago({
     const batchId = importResult.data.importBatchId;
     onHighlightBatchIdChange?.(batchId);
     setHistoryRefresh((n) => n + 1);
-    setUploadFile(null);
+    setUploadFiles([]);
     setUploadInputKey((k) => k + 1);
 
     let cancelled = false;
@@ -1317,30 +1328,32 @@ export function LoyverseVentasPorPago({
   }, [filteredRows, ratesByDate]);
 
   async function handlePagoFileSelected(e) {
-    const file = e.target.files?.[0] ?? null;
+    const picked = filesFromFileList(e.target.files);
     setFileHintError(null);
-    if (!file) {
-      setUploadFile(null);
+    if (picked.length === 0) {
+      setUploadFiles([]);
       return;
     }
     setFileHintValidating(true);
     try {
-      const v = await validateLoyverseReportHint({
-        file,
-        reportHint: "by_payment",
-      });
-      if (!v.ok) {
-        setFileHintError(
-          v.message || "El archivo no corresponde a ventas por tipo de pago."
-        );
-        setUploadFile(null);
-        setUploadInputKey((k) => k + 1);
-        return;
+      for (const file of picked) {
+        const v = await validateLoyverseReportHint({
+          file,
+          reportHint: "by_payment",
+        });
+        if (!v.ok) {
+          setFileHintError(
+            `${file.name}: ${v.message || "No corresponde a ventas por tipo de pago."}`
+          );
+          setUploadFiles([]);
+          setUploadInputKey((k) => k + 1);
+          return;
+        }
       }
-      setUploadFile(file);
+      setUploadFiles(picked);
     } catch (err) {
       setFileHintError(err.message || "No se pudo validar el archivo.");
-      setUploadFile(null);
+      setUploadFiles([]);
       setUploadInputKey((k) => k + 1);
     } finally {
       setFileHintValidating(false);
@@ -1349,11 +1362,11 @@ export function LoyverseVentasPorPago({
 
   function handlePagoExcelSubmit(e) {
     e.preventDefault();
-    if (!uploadFile) {
+    if (uploadFiles.length === 0) {
       window.alert("Selecciona un archivo Excel o CSV exportado desde Loyverse.");
       return;
     }
-    handleImport({ file: uploadFile, reportHint: "by_payment" });
+    handleImport({ files: uploadFiles, reportHint: "by_payment" });
   }
 
   function shiftRange(direction) {
@@ -1527,24 +1540,27 @@ export function LoyverseVentasPorPago({
                             aria-hidden
                             strokeWidth={2.25}
                           />
-                          <span>Seleccionar archivo</span>
+                          <span>Seleccionar archivo(s)</span>
                           <input
                             key={uploadInputKey}
                             type="file"
+                            multiple
                             accept={LOYVERSE_UPLOAD_ACCEPT}
                             className="sr-only"
-                            aria-label="Seleccionar archivo del reporte Ventas por tipo de pago Loyverse"
+                            aria-label="Seleccionar uno o varios archivos del reporte Ventas por tipo de pago Loyverse"
                             disabled={fileHintValidating}
                             onChange={handlePagoFileSelected}
                           />
                         </label>
-                        {uploadFile && (
+                        {uploadFiles.length > 0 && (
                           <>
                             <span
-                              className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[14rem] font-medium"
-                              title={uploadFile.name}
+                              className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
+                              title={uploadFiles.map((f) => f.name).join("\n")}
                             >
-                              {uploadFile.name}
+                              {uploadFiles.length === 1
+                                ? uploadFiles[0].name
+                                : `${uploadFiles.length} archivos seleccionados`}
                             </span>
                             <button
                               type="submit"
@@ -1571,21 +1587,16 @@ export function LoyverseVentasPorPago({
                     <p className="text-sm text-zm-red">{importError}</p>
                   )}
                   {fileHintValidating && (
-                    <p className="text-xs text-gray-600">Validando archivo…</p>
+                    <p className="text-xs text-gray-600">Validando archivos…</p>
                   )}
                   {fileHintError && (
                     <p className="text-sm text-zm-red" role="alert">
                       {fileHintError}
                     </p>
                   )}
-                  <p className="text-[11px] text-gray-500 leading-snug max-w-xl">
-                    El selector solo filtra por tipo de archivo (Excel/CSV). Aquí debe ser el
-                    export «Ventas por tipo de pago» de Loyverse; el tipo de reporte se
-                    comprueba al elegir el archivo.
-                  </p>
                 </div>
 
-            <div className="w-full max-w-full overflow-x-auto rounded-b-xl [-webkit-overflow-scrolling:touch]">
+            <div className="w-full max-w-full max-h-[min(65vh,36rem)] sm:max-h-[min(70vh,42rem)] overflow-y-auto overflow-x-auto rounded-b-xl border border-zm-green/15 bg-white shadow-sm [-webkit-overflow-scrolling:touch]">
               <table className="w-full min-w-[800px] max-w-full table-fixed border-collapse text-sm sm:text-base">
                 <colgroup>
                   <col className="w-[11%]" />
@@ -1597,7 +1608,7 @@ export function LoyverseVentasPorPago({
                   <col className="w-[15%]" />
                   <col className="w-[13%]" />
                 </colgroup>
-                <thead className="bg-gray-100">
+                <thead className="sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream text-zm-sidebar">
                   <tr>
                     <th
                       scope="col"
@@ -1826,18 +1837,668 @@ export function LoyverseVentasPorPago({
               </table>
             </div>
           </section>
-          <p className="text-[10px] text-gray-400">
-            Cada día usa la tasa guardada en «Resumen de ventas» para esa fecha.
-            Los Bs son USD × tasa del día (varios días en el rango pueden tener
-            tasas distintas).
-            {rowsMissingRate > 0 && (
-              <span className="block mt-0.5 text-amber-700/90">
-                {rowsMissingRate} fila(s) importada(s) con montos en USD no tienen
-                tasa guardada para su fecha: complete la tasa en Resumen de ventas
-                para incluirlas en los totales Bs.
-              </span>
-            )}
-          </p>
+          {rowsMissingRate > 0 && (
+            <p className="text-sm text-amber-800" role="status">
+              {rowsMissingRate} fila(s) importada(s) con montos en USD no tienen
+              tasa guardada para su fecha: complete la tasa en Resumen de ventas
+              para incluirlas en los totales Bs.
+            </p>
+          )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function escapeCsvSemicolonCell(value) {
+  const s = String(value ?? "");
+  if (/[;\n\r"]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+/** Ventas por artículo (Loyverse: cantidad vendida, ventas netas, beneficio por SKU/producto). */
+export function LoyverseVentasPorArticulo({
+  highlightBatchId = null,
+  onHighlightBatchIdChange,
+} = {}) {
+  const [topTab, setTopTab] = useState("tabla");
+  const [uploadFiles, setUploadFiles] = useState([]);
+  const [uploadInputKey, setUploadInputKey] = useState(0);
+  const [fileHintError, setFileHintError] = useState(null);
+  const [fileHintValidating, setFileHintValidating] = useState(false);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
+
+  const {
+    loading: importLoading,
+    error: importError,
+    result: importResult,
+    handleImport,
+  } = useLoyverseImport();
+
+  const [rows, setRows] = useState([]);
+  const [ratesByDate, setRatesByDate] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [rangeStart, setRangeStart] = useState("");
+  const [rangeEnd, setRangeEnd] = useState("");
+  const [rangeBootstrapped, setRangeBootstrapped] = useState(false);
+
+  const refreshFacts = useCallback(async () => {
+    try {
+      setLoading(true);
+      setErr(null);
+      const res = await fetchLoyverseFactsByTypes(["item_line"], {
+        limit: 25000,
+      });
+      let ratesData = [];
+      try {
+        const ratesRes = await fetchLoyverseDailyRates();
+        ratesData = ratesRes.data || [];
+      } catch {
+        ratesData = [];
+      }
+      const data = res.data || [];
+      setRows(data);
+      const map = {};
+      for (const row of ratesData) {
+        const dk = String(row.business_date || "").slice(0, 10);
+        if (dk && row.rate_bs != null) {
+          map[dk] = Number(row.rate_bs);
+        }
+      }
+      setRatesByDate(map);
+      return data;
+    } catch (e) {
+      setErr(e.message);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshFacts();
+  }, [refreshFacts]);
+
+  useEffect(() => {
+    if (!importResult?.success || importResult?.data?.importBatchId == null) {
+      return;
+    }
+    const batchId = importResult.data.importBatchId;
+    onHighlightBatchIdChange?.(batchId);
+    setHistoryRefresh((n) => n + 1);
+    setUploadFiles([]);
+    setUploadInputKey((k) => k + 1);
+
+    let cancelled = false;
+    void (async () => {
+      const data = await refreshFacts();
+      if (cancelled || !data) return;
+      const span = dateRangeForImportedLoyverseBatch(data, batchId);
+      if (span) {
+        setRangeStart(span.start);
+        setRangeEnd(span.end);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    importResult?.data?.importBatchId,
+    importResult?.success,
+    onHighlightBatchIdChange,
+    refreshFacts,
+  ]);
+
+  useEffect(() => {
+    if (rangeBootstrapped || loading) return;
+    if (rows.length > 0) {
+      const uniq = [
+        ...new Set(rows.map((r) => String(r.business_date || "").slice(0, 10))),
+      ]
+        .filter(Boolean)
+        .sort();
+      if (uniq.length === 0) return;
+      setRangeStart(uniq[0]);
+      setRangeEnd(uniq[uniq.length - 1]);
+      setRangeBootstrapped(true);
+      return;
+    }
+    const t = localTodayYmd();
+    setRangeStart(t);
+    setRangeEnd(t);
+    setRangeBootstrapped(true);
+  }, [rows, rangeBootstrapped, loading]);
+
+  const { dataMinYmd, dataMaxYmd } = useMemo(() => {
+    const uniq = [
+      ...new Set(rows.map((r) => String(r.business_date || "").slice(0, 10))),
+    ]
+      .filter(Boolean)
+      .sort();
+    if (uniq.length === 0) return { dataMinYmd: "", dataMaxYmd: "" };
+    return { dataMinYmd: uniq[0], dataMaxYmd: uniq[uniq.length - 1] };
+  }, [rows]);
+
+  const filteredRows = useMemo(() => {
+    if (!rangeStart || !rangeEnd) return rows;
+    const lo = minYmd(rangeStart, rangeEnd);
+    const hi = maxYmd(rangeStart, rangeEnd);
+    return rows.filter((r) => {
+      const d = String(r.business_date || "").slice(0, 10);
+      return d && d >= lo && d <= hi;
+    });
+  }, [rows, rangeStart, rangeEnd]);
+
+  const sortedItemRows = useMemo(() => {
+    return [...filteredRows].sort((a, b) => {
+      const da = String(a.business_date || "").slice(0, 10);
+      const db = String(b.business_date || "").slice(0, 10);
+      if (da !== db) return db.localeCompare(da);
+      const na = String(a.item_name || a.sku || "");
+      const nb = String(b.item_name || b.sku || "");
+      return na.localeCompare(nb, "es");
+    });
+  }, [filteredRows]);
+
+  const itemRangeTotals = useMemo(() => {
+    let qty = 0;
+    let net = 0;
+    let profit = 0;
+    let costUsd = 0;
+    let netBs = 0;
+    let profitBs = 0;
+    let costBs = 0;
+    let missing = 0;
+
+    for (const r of filteredRows) {
+      const d = String(r.business_date || "").slice(0, 10);
+      const rateRaw = ratesByDate[d];
+      const rateNum =
+        rateRaw != null && Number.isFinite(Number(rateRaw))
+          ? Number(rateRaw)
+          : null;
+
+      const q = Number(r.qty_sold);
+      const n = Number(r.net_sales);
+      const p = Number(r.gross_profit);
+      const c = costosNetosUsd(r);
+
+      if (Number.isFinite(q)) qty += q;
+      if (Number.isFinite(n)) net += n;
+      if (Number.isFinite(p)) profit += p;
+      if (c != null && Number.isFinite(c)) costUsd += c;
+
+      if (rateNum != null) {
+        if (Number.isFinite(n)) netBs += n * rateNum;
+        if (Number.isFinite(p)) profitBs += p * rateNum;
+        if (c != null && Number.isFinite(c)) costBs += c * rateNum;
+      } else if (
+        (Number.isFinite(n) && n !== 0) ||
+        (Number.isFinite(p) && p !== 0) ||
+        (c != null && c !== 0)
+      ) {
+        missing += 1;
+      }
+    }
+
+    return {
+      qty,
+      net,
+      profit,
+      costUsd,
+      netBs,
+      profitBs,
+      costBs,
+      rowsMissingRate: missing,
+    };
+  }, [filteredRows, ratesByDate]);
+
+  async function handleArticuloFileSelected(e) {
+    const picked = filesFromFileList(e.target.files);
+    setFileHintError(null);
+    if (picked.length === 0) {
+      setUploadFiles([]);
+      return;
+    }
+    setFileHintValidating(true);
+    try {
+      for (const file of picked) {
+        const v = await validateLoyverseReportHint({
+          file,
+          reportHint: "by_item",
+        });
+        if (!v.ok) {
+          setFileHintError(
+            `${file.name}: ${v.message || "No corresponde a ventas por artículo."}`
+          );
+          setUploadFiles([]);
+          setUploadInputKey((k) => k + 1);
+          return;
+        }
+      }
+      setUploadFiles(picked);
+    } catch (err2) {
+      setFileHintError(err2.message || "No se pudo validar el archivo.");
+      setUploadFiles([]);
+      setUploadInputKey((k) => k + 1);
+    } finally {
+      setFileHintValidating(false);
+    }
+  }
+
+  function handleArticuloExcelSubmit(e) {
+    e.preventDefault();
+    if (uploadFiles.length === 0) {
+      window.alert(
+        "Selecciona un archivo Excel o CSV exportado desde Loyverse."
+      );
+      return;
+    }
+    handleImport({ files: uploadFiles, reportHint: "by_item" });
+  }
+
+  function shiftRange(direction) {
+    if (!rangeStart || !rangeEnd) return;
+    const step = daysInclusive(rangeStart, rangeEnd);
+    setRangeStart(addDaysYmd(rangeStart, direction * step));
+    setRangeEnd(addDaysYmd(rangeEnd, direction * step));
+  }
+
+  function exportCsv() {
+    const header = [
+      "Fecha",
+      "Tasa del día (Bs)",
+      "Artículo",
+      "Código",
+      "Cantidad vendida",
+      "Ventas netas (USD)",
+      "Ventas netas (Bs)",
+      "Beneficio bruto (USD)",
+      "Beneficio bruto (Bs)",
+      "Costo neto (USD)",
+      "Costo neto (Bs)",
+      "Lote",
+    ];
+    const lines = [header.join(";")];
+    for (const r of sortedItemRows) {
+      const d = String(r.business_date || "").slice(0, 10);
+      const rateRaw = ratesByDate[d];
+      const rateNum =
+        rateRaw != null && Number.isFinite(Number(rateRaw))
+          ? Number(rateRaw)
+          : null;
+      const n = Number(r.net_sales);
+      const p = Number(r.gross_profit);
+      const c = costosNetosUsd(r);
+      const netBs =
+        rateNum != null && Number.isFinite(n) ? (n * rateNum).toFixed(2) : "";
+      const profitBs =
+        rateNum != null && Number.isFinite(p) ? (p * rateNum).toFixed(2) : "";
+      const costBs =
+        rateNum != null && c != null && Number.isFinite(c)
+          ? (c * rateNum).toFixed(2)
+          : "";
+      lines.push(
+        [
+          d,
+          rateNum != null ? String(rateNum) : "",
+          escapeCsvSemicolonCell(r.item_name),
+          escapeCsvSemicolonCell(r.sku),
+          Number.isFinite(Number(r.qty_sold)) ? String(r.qty_sold) : "",
+          Number.isFinite(n) ? n.toFixed(2) : "",
+          netBs,
+          Number.isFinite(p) ? p.toFixed(2) : "",
+          profitBs,
+          c != null && Number.isFinite(c) ? c.toFixed(2) : "",
+          costBs,
+          r.import_batch_id != null ? `#${r.import_batch_id}` : "",
+        ].join(";")
+      );
+    }
+    lines.push(
+      [
+        "Total",
+        "",
+        "",
+        "",
+        Number.isFinite(itemRangeTotals.qty)
+          ? String(itemRangeTotals.qty)
+          : "",
+        Number.isFinite(itemRangeTotals.net)
+          ? itemRangeTotals.net.toFixed(2)
+          : "",
+        itemRangeTotals.netBs.toFixed(2),
+        Number.isFinite(itemRangeTotals.profit)
+          ? itemRangeTotals.profit.toFixed(2)
+          : "",
+        itemRangeTotals.profitBs.toFixed(2),
+        Number.isFinite(itemRangeTotals.costUsd)
+          ? itemRangeTotals.costUsd.toFixed(2)
+          : "",
+        itemRangeTotals.costBs.toFixed(2),
+        "",
+      ].join(";")
+    );
+    const blob = new Blob(["\ufeff" + lines.join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `ventas-por-articulo_${rangeStart}_${rangeEnd}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  const articuloSubBtn = (key, label) => (
+    <button
+      type="button"
+      onClick={() => setTopTab(key)}
+      className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+        topTab === key
+          ? "bg-zm-cream/70 border-zm-green/45 text-zm-sidebar shadow-sm"
+          : "bg-transparent border-transparent text-gray-600 hover:text-zm-sidebar hover:bg-zm-cream/40"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  const hid =
+    highlightBatchId != null && Number.isFinite(Number(highlightBatchId))
+      ? Number(highlightBatchId)
+      : null;
+
+  return (
+    <div className="w-full font-zm">
+      <div className="w-full max-w-7xl">
+        <div className="flex items-center bg-zm-green px-4 sm:px-6 py-3 text-white shadow-sm rounded-b-xl">
+          <h1 className="text-sm sm:text-base font-semibold tracking-tight">
+            Ventas por artículo
+          </h1>
+        </div>
+        <div className="px-4 pt-3 pb-2 space-y-3">
+          <div className="border-b border-zm-green/20">
+            <div className="flex flex-wrap gap-1 py-1">
+              {articuloSubBtn("tabla", "Tabla")}
+              {articuloSubBtn("historial", "Historial de cargas")}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {topTab === "historial" ? (
+        <div className="w-full max-w-[1600px] px-4 sm:px-6 pb-8 pt-1">
+          <LoyverseImportBatchHistory
+            detectedFormatFilter="by_item"
+            refreshToken={historyRefresh}
+            preferredSelectBatchId={importResult?.data?.importBatchId ?? null}
+            onDeleted={() => void refreshFacts()}
+          />
+        </div>
+      ) : (
+        <div className="w-full max-w-7xl px-4 pt-1 pb-8 space-y-3">
+          {err && <p className="text-sm text-zm-red">{err}</p>}
+          {loading && <p className="text-sm text-gray-500">Cargando…</p>}
+          {!loading && rows.length === 0 && !err && (
+            <p className="text-sm text-gray-600">
+              No hay líneas por artículo. Importa el reporte «Ventas por
+              artículo» de Loyverse (Excel o CSV) con el formulario de abajo.
+            </p>
+          )}
+          {!loading && (
+            <>
+              <section className="rounded-xl border border-zm-green/20 bg-white p-3 sm:p-4 shadow-sm space-y-3">
+                <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
+                        title="Periodo anterior"
+                        aria-label="Periodo anterior"
+                        onClick={() => shiftRange(-1)}
+                      >
+                        ‹
+                      </button>
+                      <LoyversePorPagoDateRange
+                        rangeStart={rangeStart}
+                        rangeEnd={rangeEnd}
+                        dataMinYmd={dataMinYmd}
+                        dataMaxYmd={dataMaxYmd}
+                        onApplyRange={(startYmd, endYmd) => {
+                          setRangeStart(startYmd);
+                          setRangeEnd(endYmd);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
+                        title="Periodo siguiente"
+                        aria-label="Periodo siguiente"
+                        onClick={() => shiftRange(1)}
+                      >
+                        ›
+                      </button>
+
+                      <form
+                        onSubmit={handleArticuloExcelSubmit}
+                        className="flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto lg:ml-auto"
+                      >
+                        <label
+                          className={`cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40 ${
+                            fileHintValidating
+                              ? "pointer-events-none opacity-60"
+                              : ""
+                          }`}
+                        >
+                          <Upload
+                            className="h-4 w-4 shrink-0 opacity-90"
+                            aria-hidden
+                            strokeWidth={2.25}
+                          />
+                          <span>Seleccionar archivo(s)</span>
+                          <input
+                            key={uploadInputKey}
+                            type="file"
+                            multiple
+                            accept={LOYVERSE_UPLOAD_ACCEPT}
+                            className="sr-only"
+                            aria-label="Seleccionar uno o varios archivos del reporte Ventas por artículo Loyverse"
+                            disabled={fileHintValidating}
+                            onChange={handleArticuloFileSelected}
+                          />
+                        </label>
+                        {uploadFiles.length > 0 && (
+                          <>
+                            <span
+                              className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
+                              title={uploadFiles.map((f) => f.name).join("\n")}
+                            >
+                              {uploadFiles.length === 1
+                                ? uploadFiles[0].name
+                                : `${uploadFiles.length} archivos seleccionados`}
+                            </span>
+                            <button
+                              type="submit"
+                              disabled={importLoading || fileHintValidating}
+                              className="shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50"
+                            >
+                              {importLoading ? "Importando…" : "Importar"}
+                            </button>
+                          </>
+                        )}
+                      </form>
+                    </div>
+                    <div className="flex flex-wrap gap-2 shrink-0 lg:justify-end">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-zm-green/40 bg-white px-3 py-1.5 text-xs font-semibold text-zm-green hover:bg-zm-green/5"
+                        onClick={exportCsv}
+                      >
+                        EXPORTAR
+                      </button>
+                    </div>
+                  </div>
+                  {importError && (
+                    <p className="text-sm text-zm-red">{importError}</p>
+                  )}
+                  {fileHintValidating && (
+                    <p className="text-sm text-gray-500">Validando archivos…</p>
+                  )}
+                  {fileHintError && (
+                    <p className="text-sm text-zm-red" role="alert">
+                      {fileHintError}
+                    </p>
+                  )}
+
+                <div className="max-h-[min(65vh,36rem)] sm:max-h-[min(70vh,42rem)] overflow-y-auto overflow-x-auto border border-zm-green/15 rounded-lg bg-white shadow-sm [-webkit-overflow-scrolling:touch]">
+                  <table className="min-w-[1040px] w-full text-sm border-collapse">
+                    <thead className="sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream">
+                      <tr>
+                        <th className="text-left px-3 py-2 whitespace-nowrap">
+                          Fecha
+                        </th>
+                        <th className="text-right px-3 py-2 whitespace-nowrap text-xs sm:text-sm font-medium">
+                          Tasa del día (Bs)
+                        </th>
+                        <th className="text-left px-3 py-2">Artículo</th>
+                        <th className="text-left px-3 py-2">Código</th>
+                        <th className="text-right px-3 py-2 whitespace-nowrap">
+                          Cant.
+                        </th>
+                        <th className="text-right px-3 py-2 whitespace-nowrap">
+                          <span className="block">Ventas netas</span>
+                          <span className="block text-[10px] font-normal text-gray-500">
+                            (USD)
+                          </span>
+                        </th>
+                        <th className="text-right px-3 py-2 whitespace-nowrap">
+                          <span className="block">Beneficio bruto</span>
+                          <span className="block text-[10px] font-normal text-gray-500">
+                            (USD)
+                          </span>
+                        </th>
+                        <th className="text-right px-3 py-2 whitespace-nowrap">
+                          <span className="block">Costo neto</span>
+                          <span className="block text-[10px] font-normal text-gray-500">
+                            (USD)
+                          </span>
+                        </th>
+                        <th className="text-right px-3 py-2 text-xs font-normal text-gray-500 whitespace-nowrap">
+                          Lote
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedItemRows.map((r, idx) => {
+                        const d = String(r.business_date || "").slice(0, 10);
+                        const rateForRow = ratesByDate[d];
+                        const rateNum =
+                          rateForRow != null &&
+                          Number.isFinite(Number(rateForRow))
+                            ? Number(rateForRow)
+                            : null;
+                        const cn = costosNetosUsd(r);
+                        const batchHit =
+                          hid != null && Number(r.import_batch_id) === hid;
+                        return (
+                          <tr
+                            key={`loyverse-item-${idx}-${r.import_batch_id ?? "x"}-${d}-${String(r.sku ?? "").slice(0, 40)}`}
+                            className={`border-t border-gray-100 hover:bg-gray-50 ${
+                              batchHit
+                                ? "border-zm-green/10 bg-zm-yellow/30 hover:bg-zm-yellow/40"
+                                : ""
+                            }`}
+                          >
+                            <td className="px-3 py-2 whitespace-nowrap text-gray-600">
+                              {formatDateShort(r.business_date)}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                              {rateNum != null ? formatBs(rateNum) : "—"}
+                            </td>
+                            <td className="max-w-[14rem] min-w-0 overflow-hidden px-3 py-2 sm:max-w-xs">
+                              <span
+                                className="line-clamp-2 font-medium text-gray-900"
+                                title={r.item_name || ""}
+                              >
+                                {r.item_name || "—"}
+                              </span>
+                            </td>
+                            <td className="max-w-[9rem] min-w-0 overflow-hidden px-3 py-2">
+                              <span
+                                className="truncate block font-mono text-sm text-gray-800"
+                                title={r.sku || ""}
+                              >
+                                {r.sku || "—"}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                              {formatQtySold(r.qty_sold)}
+                            </td>
+                            <UsdDualCell
+                              usdValue={r.net_sales}
+                              rateBs={rateNum}
+                              variant="emphasis"
+                            />
+                            <UsdDualCell
+                              usdValue={r.gross_profit}
+                              rateBs={rateNum}
+                              variant="profit"
+                            />
+                            <UsdDualCell
+                              usdValue={cn}
+                              rateBs={rateNum}
+                              variant="cost"
+                            />
+                            <td className="px-3 py-2 text-right text-xs text-gray-400 font-mono">
+                              {r.import_batch_id != null
+                                ? `#${r.import_batch_id}`
+                                : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {sortedItemRows.length > 0 && (
+                        <tr className="border-t-2 border-zm-green/25 bg-zm-green/10 text-gray-900">
+                          <td
+                            colSpan={4}
+                            className="px-3 py-2 text-center text-sm font-bold"
+                          >
+                            Total del rango
+                          </td>
+                          <td className="px-3 py-2 text-right text-sm font-bold tabular-nums whitespace-nowrap">
+                            {formatQtySold(itemRangeTotals.qty)}
+                          </td>
+                          <UsdBsAggregateCell
+                            usdValue={itemRangeTotals.net}
+                            bsSum={itemRangeTotals.netBs}
+                            variant="emphasis"
+                          />
+                          <UsdBsAggregateCell
+                            usdValue={itemRangeTotals.profit}
+                            bsSum={itemRangeTotals.profitBs}
+                          />
+                          <UsdBsAggregateCell
+                            usdValue={itemRangeTotals.costUsd}
+                            bsSum={itemRangeTotals.costBs}
+                          />
+                          <td className="px-3 py-2" />
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+              {itemRangeTotals.rowsMissingRate > 0 && (
+                <p className="text-sm text-amber-800" role="status">
+                  {itemRangeTotals.rowsMissingRate} fila(s) con montos en USD sin
+                  tasa para su fecha: complétala en Resumen de ventas para ver Bs y
+                  totales completos.
+                </p>
+              )}
             </>
           )}
         </div>

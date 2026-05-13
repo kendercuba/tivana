@@ -202,8 +202,8 @@ export default function BankImportBatchHistory({
             <thead
               className={
                 isZM
-                  ? "bg-zm-yellow/35 text-zm-sidebar sticky top-0 z-10"
-                  : "bg-gray-100 sticky top-0 z-10"
+                  ? "sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream text-zm-sidebar"
+                  : "sticky top-0 z-10 border-b border-gray-200 bg-gray-100 [&_th]:bg-gray-100"
               }
             >
               <tr>
@@ -227,16 +227,38 @@ export default function BankImportBatchHistory({
               </tr>
             </thead>
             <tbody>
-              {batches.map((b) => (
+              {batches.map((b) => {
+                const bid = Number(b.id);
+                const isSelected = selectedBatchId === b.id;
+                const preferredId =
+                  preferredSelectBatchId != null &&
+                  preferredSelectBatchId !== ""
+                    ? Number(preferredSelectBatchId)
+                    : null;
+                const isPreferredNew =
+                  Number.isFinite(preferredId) &&
+                  preferredId > 0 &&
+                  bid === preferredId;
+                return (
                 <tr
                   key={b.id}
                   className={
                     isZM
-                      ? `border-t cursor-pointer border-zm-green/10 hover:bg-zm-yellow/20 ${
-                          selectedBatchId === b.id ? "bg-zm-yellow/30" : ""
+                      ? `border-t cursor-pointer border-zm-green/10 transition-colors ${
+                          isSelected
+                            ? isPreferredNew
+                              ? "bg-zm-yellow/40 ring-1 ring-zm-green/30 shadow-sm"
+                              : "bg-zm-yellow/30"
+                            : isPreferredNew
+                              ? "bg-zm-yellow/25 hover:bg-zm-yellow/35"
+                              : "hover:bg-zm-yellow/20"
                         }`
-                      : `border-t cursor-pointer hover:bg-blue-50 ${
-                          selectedBatchId === b.id ? "bg-blue-50" : ""
+                      : `border-t cursor-pointer ${
+                          isSelected
+                            ? "bg-blue-50"
+                            : isPreferredNew
+                              ? "bg-amber-50 hover:bg-amber-100/80"
+                              : "hover:bg-blue-50"
                         }`
                   }
                   onClick={() => setSelectedBatchId(b.id)}
@@ -351,7 +373,8 @@ export default function BankImportBatchHistory({
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           {batches.length === 0 && !batchesError && (

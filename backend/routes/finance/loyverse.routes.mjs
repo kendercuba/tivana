@@ -160,7 +160,10 @@ router.post("/validate-report-hint", upload.single("file"), async (req, res) => 
       });
     }
 
-    const workbook = XLSX.readFile(tempPath);
+    const ext = path.extname(req.file.originalname || "").toLowerCase();
+    const workbook = XLSX.readFile(tempPath, {
+      ...(ext === ".csv" ? { codepage: 65001 } : {}),
+    });
     const contentShape = inferLoyverseContentFormatFromWorkbook(workbook);
     const reportHint = String(req.body.reportHint || "auto").trim() || "auto";
     const mismatchError = validateStrictReportHintAgainstContentShape(

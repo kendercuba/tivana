@@ -8,6 +8,9 @@ import XLSX from "xlsx";
  */
 
 /** User-facing (API / admin UI in Spanish). */
+const ITEM_SALES_FILENAME_RANGE_ERROR_ES =
+  "No se puede cargar este archivo: el nombre incluye dos fechas distintas. Para «Ventas por artículo» exporta un solo día desde Loyverse, o un rango cuyo nombre de archivo use el mismo día repetido (p. ej. 2026-05-08-2026-05-08).";
+
 const PAYMENT_FILENAME_RANGE_ERROR_ES =
   "No se puede cargar este archivo: el nombre incluye dos fechas distintas (rango). Sube el reporte de ventas por tipo de pago de un solo día. Si el nombre repite el mismo día dos veces (por ejemplo 2026-05-01-2026-05-01), sí se acepta.";
 
@@ -114,7 +117,10 @@ export function parseLoyverseExcel(
   reportHint = "auto",
   sourceFileName = ""
 ) {
-  const workbook = XLSX.readFile(filePath);
+  const ext = path.extname(filePath || "").toLowerCase();
+  const workbook = XLSX.readFile(filePath, {
+    ...(ext === ".csv" ? { codepage: 65001 } : {}),
+  });
   const hintTrim = String(reportHint || "").trim() || "auto";
   const contentShape = inferLoyverseContentFormatFromWorkbook(workbook);
   const mismatchErr = validateStrictReportHintAgainstContentShape(
@@ -140,6 +146,17 @@ export function parseLoyverseExcel(
       return {
         facts: [],
         detectedFormat: "by_payment",
+        parseError: check.message,
+      };
+    }
+  }
+
+  if (workbookRequiresItemFilenameRule(workbook, reportHint)) {
+    const check = validateItemSalesFilenameForImport(baseName);
+    if (!check.ok) {
+      return {
+        facts: [],
+        detectedFormat: "by_item",
         parseError: check.message,
       };
     }
@@ -238,6 +255,39 @@ function validatePaymentReportFilenameForImport(baseName) {
   return { ok: true };
 }
 
+function validateItemSalesFilenameForImport(baseName) {
+  const distinct = collectDistinctCalendarDatesFromFilename(baseName);
+  if (distinct.length > 1) {
+    return { ok: false, message: ITEM_SALES_FILENAME_RANGE_ERROR_ES };
+  }
+  return { ok: true };
+}
+
+/** True if import should enforce single-day filename rules (item sales without Fecha column). */
+function workbookRequiresItemFilenameRule(workbook, reportHint) {
+  if (String(reportHint || "").trim() === "by_item") return true;
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(worksheet, {
+      header: 1,
+      defval: "",
+      raw: false,
+    });
+    const headerIndex = findHeaderRowIndex(rows);
+    if (headerIndex === -1) continue;
+    const headers = rows[headerIndex].map((h) => normalizeHeader(h));
+    const fromContent = classifyLoyverseReportFromHeaders(headers, sheetName);
+    const format =
+      String(reportHint || "").trim() !== "auto"
+        ? String(reportHint || "").trim()
+        : fromContent !== "unknown"
+          ? fromContent
+          : detectFormat(headers, sheetName);
+    if (format === "by_item") return true;
+  }
+  return false;
+}
+
 /** Reglas explícitas por cabeceras Loyverse (ES), antes del detector genérico. */
 function classifyLoyverseReportFromHeaders(headers, sheetName) {
   const h = headers.filter(Boolean).join(" ");
@@ -255,6 +305,13 @@ function classifyLoyverseReportFromHeaders(headers, sheetName) {
     /\bgross\s+profit\b/i.test(h);
 
   if (hasVentasBrutas && hasVentasNetas && hasBeneficioBruto) {
+    const hasDayColumn = /\b(fecha|date|dia|día)\b/.test(h);
+    const hasArticulosVendidos =
+      /\barticulos?\s+vendidos\b/.test(h) || /\bsold\s+quantity\b/i.test(h);
+    const hasArticuloNameCol = /\barticulo\b/.test(h);
+    if (!hasDayColumn && hasArticulosVendidos && hasArticuloNameCol) {
+      return "by_item";
+    }
     return "daily_summary";
   }
 
@@ -315,7 +372,9 @@ function parseSheetRows(
   }
 
   if (format === "by_item") {
-    return dataRows.map((r) => mapItemRow(r, sheetName)).filter(Boolean);
+    return dataRows
+      .map((r) => mapItemRow(r, sheetName, sourceFileName))
+      .filter(Boolean);
   }
 
   return [];
@@ -331,10 +390,15 @@ function findHeaderRowIndex(rows) {
       /(venta|sale|net|neto|brut|gross|profit|beneficio|pago|payment|monto)/i.test(
         joined
       );
+    const itemSalesHeader =
+      /\barticulos?\s+vendidos\b/.test(joined) &&
+      /\b(ventas?\s+netas|net\s+sales)\b/i.test(joined) &&
+      /\b(articulo|item|producto|sku)\b/i.test(joined);
     const paymentTypeReport =
       /\b(tipo\s+de\s+pago|payment\s+type)\b/i.test(joined) &&
       /(monto|amount|importe|transacci)/i.test(joined);
     if (paymentTypeReport && hasSales) return i;
+    if (itemSalesHeader && hasSales) return i;
     if (hasDate && hasSales) return i;
   }
   return -1;
@@ -362,7 +426,7 @@ function detectFormat(headers, sheetName) {
 
   if (
     /(item|articulo|artículo|product|sku)/.test(h) &&
-    /(quantity|cantidad|sold|vend)/.test(h)
+    /(quantity|cantidad|sold|vend|articulos?\s+vendidos)/.test(h)
   ) {
     return "by_item";
   }
@@ -623,8 +687,11 @@ function mapPaymentRow(raw, sheetName, sourceFileName = "") {
   };
 }
 
-function mapItemRow(raw, sheetName) {
-  const businessDate = pickDate(raw, ["date", "fecha", "día", "dia"]);
+function mapItemRow(raw, sheetName, sourceFileName = "") {
+  let businessDate = pickDate(raw, ["date", "fecha", "día", "dia"]);
+  if (!businessDate) {
+    businessDate = inferBusinessDateFromPaymentFilename(sourceFileName);
+  }
   if (!businessDate) return null;
 
   const itemName = pickText(raw, [
@@ -636,10 +703,12 @@ function mapItemRow(raw, sheetName) {
     "name",
     "nombre",
   ]);
-  const sku = pickText(raw, ["sku", "código", "codigo", "code"]);
+  const sku = pickText(raw, ["sku", "ref", "código", "codigo", "code"]);
   const qty = pickNumber(raw, [
     "sold quantity",
     "cantidad vendida",
+    "articulos vendidos",
+    "articulo vendidos",
     "quantity",
     "cantidad",
     "qty",
@@ -651,6 +720,11 @@ function mapItemRow(raw, sheetName) {
     "net sales (tax inclusive)",
     "sales",
     "ventas",
+  ]);
+  const grossSales = pickNumber(raw, [
+    "gross sales",
+    "ventas brutas",
+    "venta bruta",
   ]);
   const grossProfit = pickNumber(raw, [
     "gross profit",
@@ -667,7 +741,7 @@ function mapItemRow(raw, sheetName) {
     item_name: itemName,
     sku,
     qty_sold: qty,
-    gross_sales: null,
+    gross_sales: grossSales,
     net_sales: netSales,
     gross_profit: grossProfit,
     transactions_count: null,

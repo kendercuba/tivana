@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { Upload } from "lucide-react";
 import useBankImport from "../../../hooks/admin/finance/useBankImport";
 import BankImportBatchHistory from "../../../components/admin/finance/BankImportBatchHistory.jsx";
 import { fetchBankAccounts } from "../../../api/admin/finance/bankApi";
 import { useFinanceBasePath } from "../../../contexts/FinanceBasePathContext.jsx";
+import { filesFromFileList } from "../../../utils/filesFromFileList.js";
 
 export default function BankImport({
   accountsRefreshToken = 0,
@@ -11,11 +13,15 @@ export default function BankImport({
 }) {
   const financeBase = useFinanceBasePath();
   const isZonaMarket = financeBase.startsWith("/zonamarket");
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [bankAccountsAll, setBankAccountsAll] = useState([]);
   const [historyBump, setHistoryBump] = useState(0);
 
   const { loading, error, result, handleImport } = useBankImport();
+
+  const lastImportBatchId =
+    result?.data?.importBatchId ?? result?.data?.import_batch_id ?? null;
 
   const activeAccounts = bankAccountsAll.filter((a) => a.is_active);
 
@@ -33,10 +39,13 @@ export default function BankImport({
   }, [accountsRefreshToken]);
 
   useEffect(() => {
-    if (result?.success && result?.data?.importBatchId != null) {
+    if (!result?.success) return;
+    setFiles([]);
+    setFileInputKey((k) => k + 1);
+    if (lastImportBatchId != null) {
       setHistoryBump((n) => n + 1);
     }
-  }, [result?.data?.importBatchId, result?.success]);
+  }, [result?.success, lastImportBatchId]);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -48,14 +57,14 @@ export default function BankImport({
       return;
     }
 
-    if (!file) {
-      alert("Debes seleccionar un archivo Excel del banco.");
+    if (files.length === 0) {
+      alert("Selecciona uno o varios archivos Excel del banco.");
       return;
     }
 
     const fallbackAccountId = activeAccounts[0]?.id;
     handleImport({
-      file,
+      files,
       bankAccountId: fallbackAccountId,
     });
   }
@@ -95,49 +104,57 @@ export default function BankImport({
             : "bg-white rounded-lg shadow-sm border border-gray-200 p-3 max-w-4xl"
         }
       >
-        <form onSubmit={handleSubmit} className="space-y-2">
-          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
-            <div className="flex-1 min-w-[220px]">
-              <span className="sr-only">Archivo Excel del banco</span>
-              <div className="flex flex-wrap items-center gap-2">
-                <label
-                  className={
-                    isZonaMarket
-                      ? "inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-zm-green/35 bg-zm-cream text-sm text-zm-sidebar cursor-pointer hover:bg-zm-yellow/25 focus-within:ring-2 focus-within:ring-zm-yellow"
-                      : "inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-gray-300 bg-gray-50 text-sm text-gray-800 cursor-pointer hover:bg-gray-100 focus-within:ring-2 focus-within:ring-blue-500"
-                  }
-                >
-                  <input
-                    type="file"
-                    accept=".xls,.xlsx"
-                    className="sr-only"
-                    onChange={(e) =>
-                      setFile(e.target.files?.[0] ?? null)
-                    }
-                  />
-                  Seleccionar archivo
-                </label>
-                <span
-                  className="text-xs text-gray-600 truncate max-w-[min(100%,280px)]"
-                  title={file?.name ?? undefined}
-                >
-                  {file ? file.name : "Ningún archivo seleccionado"}
-                </span>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className={
-                isZonaMarket
-                  ? "shrink-0 bg-zm-red hover:bg-zm-red/90 disabled:bg-zm-red/40 text-white px-4 py-1.5 rounded-md text-sm font-semibold"
-                  : "shrink-0 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-1.5 rounded-md text-sm font-medium"
+        <form onSubmit={handleSubmit} className="flex flex-wrap items-center gap-2 min-w-0">
+          <label
+            className={
+              isZonaMarket
+                ? "cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40"
+                : "cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-md border border-gray-300 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-100 focus-within:ring-2 focus-within:ring-blue-500"
+            }
+          >
+            {isZonaMarket && (
+              <Upload
+                className="h-4 w-4 shrink-0 opacity-90"
+                aria-hidden
+                strokeWidth={2.25}
+              />
+            )}
+            <span>Seleccionar archivo(s)</span>
+            <input
+              key={fileInputKey}
+              type="file"
+              multiple
+              accept=".xls,.xlsx"
+              className="sr-only"
+              aria-label="Seleccionar uno o varios archivos Excel del banco (.xls, .xlsx)"
+              onChange={(e) =>
+                setFiles(filesFromFileList(e.target.files))
               }
-            >
-              {loading ? "Importando..." : "Importar archivo"}
-            </button>
-          </div>
+            />
+          </label>
+          {files.length > 0 && (
+            <>
+              <span
+                className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
+                title={files.map((f) => f.name).join("\n")}
+              >
+                {files.length === 1
+                  ? files[0].name
+                  : `${files.length} archivos seleccionados`}
+              </span>
+              <button
+                type="submit"
+                disabled={loading}
+                className={
+                  isZonaMarket
+                    ? "shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50"
+                    : "shrink-0 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-1.5 rounded-md text-sm font-medium"
+                }
+              >
+                {loading ? "Importando…" : isZonaMarket ? "Importar" : "Importar archivo(s)"}
+              </button>
+            </>
+          )}
         </form>
       </div>
 
@@ -171,6 +188,13 @@ export default function BankImport({
                 : "text-sm text-green-700 mt-1 space-y-1"
             }
           >
+            {result?.data?.multiFileCount > 1 && (
+              <span className="block">
+                Archivos procesados:{" "}
+                <span className="font-bold">{result.data.multiFileCount}</span> (en
+                orden; los totales mostrados corresponden al último archivo).
+              </span>
+            )}
             <span className="block">
               Filas leídas en el Excel:{" "}
               <span className="font-bold">{result?.data?.totalInFile ?? 0}</span>
@@ -183,13 +207,14 @@ export default function BankImport({
               Duplicados omitidos (ya estaban en el sistema):{" "}
               <span className="font-bold">{result?.data?.skippedDuplicate ?? 0}</span>
             </span>
-            {result?.data?.importBatchId != null && (
+            {lastImportBatchId != null && (
               <span
                 className={
                   isZonaMarket ? "block text-zm-sidebar" : "block text-green-900"
                 }
               >
-                Lote guardado: <span className="font-mono font-bold">#{result.data.importBatchId}</span>
+                Lote guardado:{" "}
+                <span className="font-mono font-bold">#{lastImportBatchId}</span>
                 {" "}
                 — ya está seleccionado abajo para ver sus movimientos.
               </span>
@@ -255,7 +280,7 @@ export default function BankImport({
         accountsRefreshToken={accountsRefreshToken}
         categoriesRefreshToken={categoriesRefreshToken}
         refreshToken={historyBump}
-        preferredSelectBatchId={result?.data?.importBatchId ?? null}
+        preferredSelectBatchId={lastImportBatchId}
         useZonaMarketStyle={isZonaMarket}
       />
     </div>

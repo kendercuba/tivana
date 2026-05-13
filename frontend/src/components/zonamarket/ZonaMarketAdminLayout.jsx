@@ -1,15 +1,37 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { Building2, Home, LayoutDashboard, PieChart, Store } from "lucide-react";
+import {
+  Building2,
+  Home,
+  LayoutDashboard,
+  PieChart,
+  ShoppingBasket,
+  Store,
+} from "lucide-react";
 
 const ZM_FINANCE_BASE = "/zonamarket/admin/finance";
 const LOYVERSE_PATH = `${ZM_FINANCE_BASE}/loyverse`;
+const ZM_ARTICLES_BASE = "/zonamarket/admin/articles";
+const ARTICLES_LIST_PATH = `${ZM_ARTICLES_BASE}/list`;
+const ARTICLES_CATEGORIES_PATH = `${ZM_ARTICLES_BASE}/categories`;
 
 const LS_LOYVERSE_EXPANDED = "zm-admin-loyverse-expanded";
+const LS_ARTICLES_EXPANDED = "zm-admin-articles-expanded";
 
 function readLoyverseExpandedFromStorage() {
   try {
     const v = localStorage.getItem(LS_LOYVERSE_EXPANDED);
+    if (v === "false") return false;
+    if (v === "true") return true;
+  } catch {
+    /* ignore */
+  }
+  return true;
+}
+
+function readArticlesExpandedFromStorage() {
+  try {
+    const v = localStorage.getItem(LS_ARTICLES_EXPANDED);
     if (v === "false") return false;
     if (v === "true") return true;
   } catch {
@@ -27,10 +49,10 @@ function loyverseQs(tab, ventasSub) {
 
 function financeNavClass({ isActive }) {
   return [
-    "block rounded-lg px-2 py-1.5 text-sm transition-colors",
+    "block rounded-lg px-2 py-2 text-base transition-colors",
     isActive
       ? "font-semibold text-white bg-zm-red/35 ring-1 ring-zm-yellow/50"
-      : "text-white/90 hover:bg-white/10 hover:text-white",
+      : "font-medium text-white/95 hover:bg-white/10 hover:text-white",
   ].join(" ");
 }
 
@@ -41,8 +63,18 @@ function isUnderZmBanking(pathname) {
   return pathname === BANK_CUENTAS_SECTION;
 }
 
+/** Lucide icons on dark sidebar: distinct tints + shared size. */
+const NAV_ICON_LG = "h-5 w-5 shrink-0 stroke-[2.25]";
+const NAV_ICON_RAIL = "h-6 w-6 shrink-0 stroke-[2.25]";
+
 const STORE_LINKS = [
-  { to: "/zonamarket", label: "Zona Market", icon: Home, end: true },
+  {
+    to: "/zonamarket",
+    label: "Zona Market",
+    icon: Home,
+    end: true,
+    iconClass: "text-sky-300",
+  },
 ];
 
 function cn(...parts) {
@@ -52,10 +84,10 @@ function cn(...parts) {
 /** Misma base visual que filas con caret + icono (Cuentas bancarias / Loyverse). */
 function financePanelNavClass({ isActive }) {
   return cn(
-    "flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-sm transition-colors",
+    "flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-base transition-colors",
     isActive
       ? "font-semibold text-white bg-zm-red/35 ring-1 ring-zm-yellow/50"
-      : "text-white/90 hover:bg-white/10 hover:text-white"
+      : "font-medium text-white/95 hover:bg-white/10 hover:text-white"
   );
 }
 
@@ -71,13 +103,16 @@ export default function ZonaMarketAdminLayout() {
   const lvVentasSub = (() => {
     const s = lv.get("ventasSub");
     if (s === "pago") return "pago";
+    if (s === "articulos") return "articulos";
     return "resumen";
   })();
 
   const isUnderLoyverseVentasTabs =
     onLoyverseRoute &&
     lvTab === "ventas" &&
-    (lvVentasSub === "resumen" || lvVentasSub === "pago");
+    (lvVentasSub === "resumen" ||
+      lvVentasSub === "pago" ||
+      lvVentasSub === "articulos");
   const [loyverseVentasOpen, setLoyverseVentasOpen] = useState(
     isUnderLoyverseVentasTabs
   );
@@ -93,6 +128,12 @@ export default function ZonaMarketAdminLayout() {
     readLoyverseExpandedFromStorage
   );
 
+  const isUnderArticles = location.pathname.startsWith(ZM_ARTICLES_BASE);
+
+  const [articlesRootOpen, setArticlesRootOpen] = useState(
+    readArticlesExpandedFromStorage
+  );
+
   useEffect(() => {
     try {
       localStorage.setItem(LS_LOYVERSE_EXPANDED, String(loyverseRootOpen));
@@ -100,6 +141,14 @@ export default function ZonaMarketAdminLayout() {
       /* ignore */
     }
   }, [loyverseRootOpen]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_ARTICLES_EXPANDED, String(articlesRootOpen));
+    } catch {
+      /* ignore */
+    }
+  }, [articlesRootOpen]);
 
   useEffect(() => {
     if (!isUnderLoyverseVentasTabs) setLoyverseVentasOpen(false);
@@ -128,6 +177,7 @@ export default function ZonaMarketAdminLayout() {
 
   const bankingExpanded = isUnderBanking || bankingOpen;
   const isFinanceRoute = location.pathname.startsWith(ZM_FINANCE_BASE);
+  const isAdminMenuRoute = isFinanceRoute || isUnderArticles;
 
   function toggleBanking() {
     setBankingOpen((prev) => !prev);
@@ -135,10 +185,10 @@ export default function ZonaMarketAdminLayout() {
 
   const railLinkClass = ({ isActive }) =>
     cn(
-      "group flex items-center justify-center gap-3 rounded-xl p-2.5 text-sm font-medium transition-colors lg:w-full lg:justify-start lg:px-3",
+      "group flex items-center justify-center gap-3 rounded-xl p-2.5 text-base font-semibold tracking-tight transition-colors lg:w-full lg:justify-start lg:px-3",
       isActive
         ? "bg-white/10 text-white shadow-inner ring-2 ring-zm-yellow/90"
-        : "text-white/90 hover:bg-white/10 hover:text-white"
+        : "text-white/95 hover:bg-white/10 hover:text-white"
     );
 
   return (
@@ -175,7 +225,7 @@ export default function ZonaMarketAdminLayout() {
         </div>
 
         <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2 lg:gap-2 lg:overflow-visible lg:p-0">
-          {STORE_LINKS.map(({ to, label, icon: Icon, end }) => (
+          {STORE_LINKS.map(({ to, label, icon: Icon, end, iconClass }) => (
             <NavLink
               key={to}
               to={to}
@@ -183,10 +233,61 @@ export default function ZonaMarketAdminLayout() {
               className={railLinkClass}
               title={label}
             >
-              <Icon className="h-5 w-5 shrink-0" aria-hidden />
-              <span className="hidden lg:inline">{label}</span>
+              <Icon
+                className={cn(NAV_ICON_RAIL, iconClass)}
+                aria-hidden
+              />
+              <span className="hidden lg:inline drop-shadow-sm">{label}</span>
             </NavLink>
           ))}
+
+          <div className="hidden lg:block">
+            <button
+              type="button"
+              onClick={() => setArticlesRootOpen((o) => !o)}
+              className={cn(
+                "flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-left text-base font-semibold tracking-tight hover:bg-white/10",
+                isUnderArticles ? "text-white" : "text-white/95"
+              )}
+              aria-expanded={articlesRootOpen}
+              aria-controls="zm-articulos-submenu"
+            >
+              <span
+                className="inline-block w-4 text-center text-[10px] text-zm-yellow"
+                aria-hidden
+              >
+                {articlesRootOpen ? "▾" : "▸"}
+              </span>
+              <ShoppingBasket
+                className={cn(NAV_ICON_LG, "text-fuchsia-300")}
+                aria-hidden
+              />
+              <span className="drop-shadow-sm">Artículos</span>
+            </button>
+            {articlesRootOpen && (
+              <ul
+                id="zm-articulos-submenu"
+                className="mt-1 ml-2 flex flex-col gap-0.5 border-l border-zm-yellow/35 pl-3"
+              >
+                <li>
+                  <NavLink
+                    to={ARTICLES_LIST_PATH}
+                    className={financeNavClass}
+                  >
+                    Lista de artículos
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink
+                    to={ARTICLES_CATEGORIES_PATH}
+                    className={financeNavClass}
+                  >
+                    Categorías
+                  </NavLink>
+                </li>
+              </ul>
+            )}
+          </div>
 
           <div className="mt-auto border-t border-zm-green/40 pt-2 lg:mt-0 lg:border-0 lg:pt-0">
             <button
@@ -194,13 +295,16 @@ export default function ZonaMarketAdminLayout() {
               onClick={() => setFinanceFlyoutOpen(true)}
               className={cn(
                 "flex w-full items-center justify-center rounded-xl p-2.5 text-white/90 hover:bg-white/10 hover:text-white lg:hidden",
-                isFinanceRoute &&
+                isAdminMenuRoute &&
                   "bg-zm-red/40 text-white ring-2 ring-zm-yellow/80"
               )}
               title="Menú admin"
               aria-expanded={financeFlyoutOpen}
             >
-              <PieChart className="h-5 w-5 shrink-0" aria-hidden />
+              <PieChart
+                className={cn(NAV_ICON_RAIL, "text-rose-300")}
+                aria-hidden
+              />
             </button>
 
             <div className="hidden lg:block">
@@ -216,10 +320,10 @@ export default function ZonaMarketAdminLayout() {
                   ▸
                 </span>
                 <LayoutDashboard
-                  className="mr-1 h-4 w-4 shrink-0 opacity-80"
+                  className={cn(NAV_ICON_LG, "text-lime-300")}
                   aria-hidden
                 />
-                <span>Panel finanzas</span>
+                <span className="drop-shadow-sm">Panel finanzas</span>
               </NavLink>
 
               <div className="mt-1">
@@ -227,8 +331,8 @@ export default function ZonaMarketAdminLayout() {
                   type="button"
                   onClick={toggleBanking}
                   className={cn(
-                    "flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-white/10",
-                    isUnderBanking ? "font-semibold text-white" : "text-white/85"
+                    "flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-left text-base font-semibold tracking-tight hover:bg-white/10",
+                    isUnderBanking ? "text-white" : "text-white/95"
                   )}
                   aria-expanded={bankingExpanded}
                   aria-controls="zm-finanzas-cuentas-submenu"
@@ -239,8 +343,11 @@ export default function ZonaMarketAdminLayout() {
                   >
                     {bankingExpanded ? "▾" : "▸"}
                   </span>
-                  <Building2 className="mr-1 h-4 w-4 shrink-0 opacity-80" />
-                  <span>Cuentas bancarias</span>
+                  <Building2
+                    className={cn(NAV_ICON_LG, "text-amber-300")}
+                    aria-hidden
+                  />
+                  <span className="drop-shadow-sm">Cuentas bancarias</span>
                 </button>
 
                 {bankingExpanded && (
@@ -262,8 +369,8 @@ export default function ZonaMarketAdminLayout() {
                   type="button"
                   onClick={() => setLoyverseRootOpen((o) => !o)}
                   className={cn(
-                    "flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-white/10",
-                    onLoyverseRoute ? "font-semibold text-white" : "text-white/85"
+                    "flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-left text-base font-semibold tracking-tight hover:bg-white/10",
+                    onLoyverseRoute ? "text-white" : "text-white/95"
                   )}
                   aria-expanded={loyverseRootOpen}
                   aria-controls="zm-loyverse-root-submenu"
@@ -274,8 +381,11 @@ export default function ZonaMarketAdminLayout() {
                   >
                     {loyverseRootOpen ? "▾" : "▸"}
                   </span>
-                  <Store className="mr-1 h-4 w-4 shrink-0 opacity-80" aria-hidden />
-                  <span>Loyverse</span>
+                  <Store
+                    className={cn(NAV_ICON_LG, "text-violet-300")}
+                    aria-hidden
+                  />
+                  <span className="drop-shadow-sm">Loyverse</span>
                 </button>
 
                 {loyverseRootOpen && (
@@ -288,10 +398,10 @@ export default function ZonaMarketAdminLayout() {
                         type="button"
                         onClick={() => setLoyverseVentasOpen((o) => !o)}
                         className={cn(
-                          "flex w-full items-center gap-1 rounded-lg px-2 py-1 text-left text-sm hover:bg-white/10",
+                          "flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-base font-semibold tracking-tight hover:bg-white/10",
                           isUnderLoyverseVentasTabs
-                            ? "font-semibold text-white"
-                            : "text-white/85"
+                            ? "text-white"
+                            : "text-white/95"
                         )}
                         aria-expanded={loyverseVentasExpanded}
                         aria-controls="zm-loyverse-ventas-nested"
@@ -333,6 +443,18 @@ export default function ZonaMarketAdminLayout() {
                               Ventas por tipo de pago
                             </Link>
                           </li>
+                          <li>
+                            <Link
+                              to={`${LOYVERSE_PATH}${loyverseQs("ventas", "articulos")}`}
+                              className={loyverseItemClass(
+                                onLoyverseRoute &&
+                                  lvTab === "ventas" &&
+                                  lvVentasSub === "articulos"
+                              )}
+                            >
+                              Ventas por artículo
+                            </Link>
+                          </li>
                         </ul>
                       )}
                     </li>
@@ -341,10 +463,10 @@ export default function ZonaMarketAdminLayout() {
                         type="button"
                         onClick={() => setLoyverseComprasOpen((o) => !o)}
                         className={cn(
-                          "flex w-full items-center gap-1 rounded-lg px-2 py-1 text-left text-sm hover:bg-white/10",
+                          "flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-base font-semibold tracking-tight hover:bg-white/10",
                           isUnderLoyverseComprasTab
-                            ? "font-semibold text-white"
-                            : "text-white/85"
+                            ? "text-white"
+                            : "text-white/95"
                         )}
                         aria-expanded={loyverseComprasExpanded}
                         aria-controls="zm-loyverse-compras-nested"
@@ -397,7 +519,9 @@ export default function ZonaMarketAdminLayout() {
             aria-label="Menú admin"
           >
             <div className="flex items-center justify-between border-b border-zm-green/40 px-4 py-3">
-              <span className="text-sm font-semibold text-white">Menú</span>
+              <span className="text-base font-bold tracking-tight text-white drop-shadow-sm">
+                Menú
+              </span>
               <button
                 type="button"
                 onClick={() => setFinanceFlyoutOpen(false)}
@@ -408,9 +532,27 @@ export default function ZonaMarketAdminLayout() {
               </button>
             </div>
             <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
+              <p className="px-2 text-xs font-bold uppercase tracking-wider text-fuchsia-200">
+                Artículos
+              </p>
+              <NavLink
+                to={ARTICLES_LIST_PATH}
+                className={(p) => cn(financeNavClass(p), "ml-3")}
+                onClick={() => setFinanceFlyoutOpen(false)}
+              >
+                Lista de artículos
+              </NavLink>
+              <NavLink
+                to={ARTICLES_CATEGORIES_PATH}
+                className={(p) => cn(financeNavClass(p), "ml-3")}
+                onClick={() => setFinanceFlyoutOpen(false)}
+              >
+                Categorías
+              </NavLink>
+
               <NavLink
                 to={`${ZM_FINANCE_BASE}/dashboard`}
-                className={financePanelNavClass}
+                className={(p) => cn(financePanelNavClass(p), "mt-3")}
                 end
                 onClick={() => setFinanceFlyoutOpen(false)}
               >
@@ -421,13 +563,13 @@ export default function ZonaMarketAdminLayout() {
                   ▸
                 </span>
                 <LayoutDashboard
-                  className="mr-1 h-4 w-4 shrink-0 opacity-80"
+                  className={cn(NAV_ICON_LG, "text-lime-300")}
                   aria-hidden
                 />
-                <span>Panel finanzas</span>
+                <span className="drop-shadow-sm">Panel finanzas</span>
               </NavLink>
 
-              <p className="mt-3 px-2 text-[10px] font-semibold uppercase tracking-wider text-zm-yellow/95">
+              <p className="mt-3 px-2 text-xs font-bold uppercase tracking-wider text-amber-200">
                 Cuentas bancarias
               </p>
               <NavLink
@@ -438,10 +580,10 @@ export default function ZonaMarketAdminLayout() {
                 Cuentas
               </NavLink>
 
-              <p className="mt-3 px-2 text-[10px] font-semibold uppercase tracking-wider text-zm-yellow/95">
+              <p className="mt-3 px-2 text-xs font-bold uppercase tracking-wider text-violet-200">
                 Loyverse
               </p>
-              <p className="mt-2 px-3 text-[11px] font-medium text-white/55">
+              <p className="mt-2 px-3 text-sm font-semibold text-white/80">
                 Ventas
               </p>
               <Link
@@ -472,7 +614,21 @@ export default function ZonaMarketAdminLayout() {
               >
                 Ventas por tipo de pago
               </Link>
-              <p className="mt-2 px-3 text-[11px] font-medium text-white/55">
+              <Link
+                to={`${LOYVERSE_PATH}${loyverseQs("ventas", "articulos")}`}
+                className={cn(
+                  loyverseItemClass(
+                    onLoyverseRoute &&
+                      lvTab === "ventas" &&
+                      lvVentasSub === "articulos"
+                  ),
+                  "ml-3 block"
+                )}
+                onClick={() => setFinanceFlyoutOpen(false)}
+              >
+                Ventas por artículo
+              </Link>
+              <p className="mt-2 px-3 text-sm font-semibold text-white/80">
                 Compras
               </p>
               <Link

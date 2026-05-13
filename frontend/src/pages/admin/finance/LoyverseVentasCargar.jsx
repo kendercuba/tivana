@@ -3,12 +3,13 @@ import useLoyverseImport from "../../../hooks/admin/finance/useLoyverseImport";
 import LoyverseImportBatchHistory from "../../../components/admin/finance/LoyverseImportBatchHistory.jsx";
 import { formatLoyverseReportKind } from "../../../components/admin/finance/loyverseImportFormatters.js";
 import { validateLoyverseReportHint } from "../../../api/admin/finance/loyverseApi";
+import { filesFromFileList } from "../../../utils/filesFromFileList.js";
 
 const LOYVERSE_UPLOAD_ACCEPT =
   ".xls,.xlsx,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 export default function LoyverseVentasCargar() {
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [fileHintError, setFileHintError] = useState(null);
   const [fileHintValidating, setFileHintValidating] = useState(false);
@@ -17,40 +18,42 @@ export default function LoyverseVentasCargar() {
   const { loading, error, result, handleImport } = useLoyverseImport();
 
   useEffect(() => {
-    setFile(null);
+    setFiles([]);
     setFileHintError(null);
     setFileInputKey((k) => k + 1);
   }, [reportHint]);
 
   async function handleFileChange(e) {
-    const f = e.target.files?.[0] ?? null;
+    const picked = filesFromFileList(e.target.files);
     setFileHintError(null);
-    if (!f) {
-      setFile(null);
+    if (picked.length === 0) {
+      setFiles([]);
       return;
     }
     if (reportHint === "auto") {
-      setFile(f);
+      setFiles(picked);
       return;
     }
     setFileHintValidating(true);
     try {
-      const v = await validateLoyverseReportHint({
-        file: f,
-        reportHint,
-      });
-      if (!v.ok) {
-        setFileHintError(
-          v.message || "El archivo no coincide con el tipo de reporte elegido."
-        );
-        setFile(null);
-        setFileInputKey((k) => k + 1);
-        return;
+      for (const f of picked) {
+        const v = await validateLoyverseReportHint({
+          file: f,
+          reportHint,
+        });
+        if (!v.ok) {
+          setFileHintError(
+            `${f.name}: ${v.message || "El archivo no coincide con el tipo de reporte elegido."}`
+          );
+          setFiles([]);
+          setFileInputKey((k) => k + 1);
+          return;
+        }
       }
-      setFile(f);
+      setFiles(picked);
     } catch (err) {
       setFileHintError(err.message || "No se pudo validar el archivo.");
-      setFile(null);
+      setFiles([]);
       setFileInputKey((k) => k + 1);
     } finally {
       setFileHintValidating(false);
@@ -59,11 +62,11 @@ export default function LoyverseVentasCargar() {
 
   function handleSubmit(e) {
     e.preventDefault();
-    if (!file) {
-      alert("Selecciona un Excel o CSV exportado desde Loyverse.");
+    if (files.length === 0) {
+      alert("Selecciona uno o varios Excel o CSV exportados desde Loyverse.");
       return;
     }
-    handleImport({ file, reportHint });
+    handleImport({ files, reportHint });
   }
 
   return (
@@ -101,7 +104,7 @@ export default function LoyverseVentasCargar() {
 
           <div>
             <span className="block text-xs font-medium text-gray-600 mb-1">
-              Archivo Excel o CSV
+              Archivo(s) Excel o CSV
             </span>
             <div className="flex flex-wrap items-center gap-2">
               <label
@@ -109,31 +112,31 @@ export default function LoyverseVentasCargar() {
                   fileHintValidating ? "pointer-events-none opacity-60" : ""
                 }`}
               >
-                Seleccionar archivo
+                Seleccionar archivo(s)
                 <input
                   key={fileInputKey}
                   type="file"
+                  multiple
                   accept={LOYVERSE_UPLOAD_ACCEPT}
                   className="sr-only"
-                  aria-label="Seleccionar archivo exportado desde Loyverse"
+                  aria-label="Seleccionar uno o varios archivos exportados desde Loyverse"
                   disabled={fileHintValidating}
                   onChange={handleFileChange}
                 />
               </label>
-              <span
-                className="text-xs text-gray-600 truncate min-w-0 flex-1 max-sm:w-full"
-                title={file?.name || ""}
-              >
-                {file ? file.name : "Ningún archivo seleccionado"}
-              </span>
+              {files.length > 0 && (
+                <span
+                  className="text-xs text-gray-700 truncate min-w-0 flex-1 max-sm:w-full font-medium max-w-[10rem] sm:max-w-[18rem]"
+                  title={files.map((f) => f.name).join("\n")}
+                >
+                  {files.length === 1
+                    ? files[0].name
+                    : `${files.length} archivos seleccionados`}
+                </span>
+              )}
             </div>
-            <p className="text-[11px] text-gray-500 leading-snug mt-1">
-              Con «Detectar automáticamente» no se bloquea por tipo. Si eliges un tipo
-              concreto, el archivo se comprueba al seleccionarlo (el diálogo del sistema
-              solo filtra Excel/CSV, no el nombre del reporte Loyverse).
-            </p>
             {fileHintValidating && (
-              <p className="text-xs text-gray-600 mt-1">Validando archivo…</p>
+              <p className="text-xs text-gray-600 mt-1">Validando archivos…</p>
             )}
             {fileHintError && (
               <p className="text-sm text-red-700 mt-1" role="alert">
@@ -142,13 +145,15 @@ export default function LoyverseVentasCargar() {
             )}
           </div>
 
-          <button
-            type="submit"
-            disabled={loading || fileHintValidating}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-1.5 rounded-md text-sm font-medium"
-          >
-            {loading ? "Importando..." : "Importar"}
-          </button>
+          {files.length > 0 && (
+            <button
+              type="submit"
+              disabled={loading || fileHintValidating}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-1.5 rounded-md text-sm font-medium"
+            >
+              {loading ? "Importando…" : "Importar"}
+            </button>
+          )}
         </form>
       </div>
 
@@ -162,21 +167,28 @@ export default function LoyverseVentasCargar() {
         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
           <h2 className="text-green-800 font-semibold">Importación completada</h2>
           <p className="text-sm text-green-700 mt-1 space-y-1">
+            {result?.data?.multiFileCount > 1 && (
+              <span className="block">
+                Archivos procesados:{" "}
+                <span className="font-bold">{result.data.multiFileCount}</span> (en
+                orden; el lote destacado corresponde al último).
+              </span>
+            )}
             <span className="block">
-              Filas detectadas:{" "}
+              Filas detectadas (último archivo):{" "}
               <span className="font-bold">{result?.data?.totalInFile ?? 0}</span>
             </span>
             <span className="block">
-              Filas nuevas guardadas:{" "}
+              Filas nuevas guardadas (último archivo):{" "}
               <span className="font-bold">{result?.data?.inserted ?? 0}</span>
             </span>
             <span className="block">
-              Duplicados omitidos:{" "}
+              Duplicados omitidos (último archivo):{" "}
               <span className="font-bold">{result?.data?.skippedDuplicate ?? 0}</span>
             </span>
             {result?.data?.detectedFormat != null && (
               <span className="block">
-                Clasificación detectada:{" "}
+                Clasificación detectada (último archivo):{" "}
                 <span className="font-bold">
                   {formatLoyverseReportKind(result.data.detectedFormat)}
                 </span>

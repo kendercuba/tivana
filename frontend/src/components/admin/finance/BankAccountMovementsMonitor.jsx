@@ -9,6 +9,7 @@ import {
   reclassifyBankMovementsForAccount,
 } from "../../../api/admin/finance/bankApi";
 import useBankImport from "../../../hooks/admin/finance/useBankImport";
+import { filesFromFileList } from "../../../utils/filesFromFileList.js";
 
 function movementDateKey(m) {
   const raw = m.movement_date;
@@ -65,7 +66,7 @@ export default function BankAccountMovementsMonitor({
   const [rangeStart, setRangeStart] = useState(() => defaultLast30YmdRange().startYmd);
   const [rangeEnd, setRangeEnd] = useState(() => defaultLast30YmdRange().endYmd);
 
-  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadFiles, setUploadFiles] = useState([]);
   const [uploadInputKey, setUploadInputKey] = useState(0);
   /** Shown when the server skipped every row as duplicate (nothing new to highlight). */
   const [importDedupeHint, setImportDedupeHint] = useState(null);
@@ -219,7 +220,7 @@ export default function BankAccountMovementsMonitor({
       pendingBankImportRangeFallbackRef.current = true;
     }
 
-    setUploadFile(null);
+    setUploadFiles([]);
     setUploadInputKey((k) => k + 1);
     setMonitorRefreshTick((n) => n + 1);
     onImportSuccess?.();
@@ -238,12 +239,12 @@ export default function BankAccountMovementsMonitor({
       );
       return;
     }
-    if (!uploadFile) {
-      window.alert("Selecciona un archivo Excel del banco.");
+    if (!uploadFiles.length) {
+      window.alert("Selecciona uno o varios archivos Excel del banco.");
       return;
     }
     handleImport({
-      file: uploadFile,
+      files: uploadFiles,
       bankAccountId:
         monitorAccountId != null ? monitorAccountId : undefined,
     });
@@ -334,26 +335,29 @@ export default function BankAccountMovementsMonitor({
                     aria-hidden
                     strokeWidth={2.25}
                   />
-                  <span>Seleccionar archivo</span>
+                  <span>Seleccionar archivo(s)</span>
                   <input
                     key={uploadInputKey}
                     type="file"
+                    multiple
                     accept=".xls,.xlsx"
                     className="sr-only"
-                    aria-label="Seleccionar archivo Excel del estado de cuenta"
+                    aria-label="Seleccionar uno o varios archivos Excel del estado de cuenta"
                     onChange={(e) => {
-                      setUploadFile(e.target.files?.[0] ?? null);
+                      setUploadFiles(filesFromFileList(e.target.files));
                       setImportDedupeHint(null);
                     }}
                   />
                 </label>
-                {uploadFile && (
+                {uploadFiles.length > 0 && (
                   <>
                     <span
-                      className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[14rem] font-medium"
-                      title={uploadFile.name}
+                      className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
+                      title={uploadFiles.map((f) => f.name).join("\n")}
                     >
-                      {uploadFile.name}
+                      {uploadFiles.length === 1
+                        ? uploadFiles[0].name
+                        : `${uploadFiles.length} archivos seleccionados`}
                     </span>
                     <button
                       type="submit"

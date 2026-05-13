@@ -20,6 +20,7 @@ import subsubcategoriesRoutes from "./routes/subsubcategories.mjs";
 import orderRoutes from "./routes/orders.mjs";
 import savedRoutes from "./routes/saved.mjs";
 import financeRoutes from "./routes/finance/index.mjs";
+import zonamarketLoyverseItemsRoutes from "./routes/zonamarketLoyverseItems.routes.mjs";
 
 // 🔥 NUEVO ROUTER MODULAR DE IMPORT
 import importRouter from "./routes/import/index.mjs";
@@ -100,6 +101,7 @@ app.use("/api/cart", cartRouter);
 app.use("/api/orders", orderRoutes);
 app.use("/api/saved", savedRoutes);
 app.use("/api/finance", financeRoutes);
+app.use("/api/zonamarket/loyverse-items", zonamarketLoyverseItemsRoutes);
 
 // 🔴 usersRouter SIEMPRE AL FINAL (es genérico /api/*)
 app.use("/api", usersRouter);

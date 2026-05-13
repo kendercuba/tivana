@@ -44,6 +44,16 @@ export default function LoyverseImportBatchHistory({
     );
   }, [batches, detectedFormatFilter]);
 
+  const preferredBatchNum = useMemo(() => {
+    const n = Number(preferredSelectBatchId);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [preferredSelectBatchId]);
+
+  const highlightPreviewRows =
+    preferredBatchNum != null &&
+    selectedBatchId != null &&
+    Number(selectedBatchId) === preferredBatchNum;
+
   async function loadBatches() {
     try {
       setBatchesError(null);
@@ -111,22 +121,15 @@ export default function LoyverseImportBatchHistory({
   return (
     <div className="w-full min-w-0 max-w-full space-y-4 font-zm">
       <section className="w-full min-w-0 bg-white rounded-xl border border-zm-green/20 shadow-sm p-4">
-        <h2 className="text-base font-semibold text-zm-sidebar mb-1">
+        <h2 className="text-base font-semibold text-zm-sidebar mb-3">
           Historial de importaciones Loyverse
         </h2>
-        <p className="text-[11px] text-gray-500 mb-3 leading-snug">
-          {detectedFormatFilter === "daily_summary"
-            ? "Solo aparecen cargas clasificadas como resumen de ventas. Clic en una fila para previsualizar; la papelera elimina el lote y sus registros."
-            : detectedFormatFilter === "by_payment"
-              ? "Solo aparecen cargas clasificadas como ventas por tipo de pago. Clic en una fila para previsualizar; la papelera elimina el lote y sus registros."
-              : "Clic en una fila para previsualizar el contenido del lote. La papelera borra el lote y todos los registros asociados en base de datos."}
-        </p>
         {batchesError && (
           <p className="text-sm text-zm-red mb-2">{batchesError}</p>
         )}
         <div className="max-h-[min(17rem,42vh)] overflow-y-auto overflow-x-auto border border-zm-green/15 rounded-lg [-webkit-overflow-scrolling:touch]">
           <table className="w-full min-w-[1120px] border-collapse text-xs sm:text-sm">
-            <thead className="bg-zm-cream/80 sticky top-0 z-10">
+            <thead className="sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream">
               <tr>
                 <th className="text-left px-2 py-1.5 sm:px-3 whitespace-nowrap">
                   Fecha carga
@@ -158,13 +161,22 @@ export default function LoyverseImportBatchHistory({
               </tr>
             </thead>
             <tbody>
-              {filteredBatches.map((b) => (
+              {filteredBatches.map((b) => {
+                const bid = Number(b.id);
+                const isSelected = selectedBatchId === b.id;
+                const isPreferredNew =
+                  preferredBatchNum != null && bid === preferredBatchNum;
+                return (
                 <tr
                   key={b.id}
                   className={`border-t border-gray-100 cursor-pointer transition-colors ${
-                    selectedBatchId === b.id
-                      ? "bg-zm-cream/70"
-                      : "hover:bg-zm-green/5"
+                    isSelected
+                      ? isPreferredNew
+                        ? "bg-zm-yellow/40 border-zm-green/15 ring-1 ring-zm-green/25 shadow-sm"
+                        : "bg-zm-cream/70"
+                      : isPreferredNew
+                        ? "bg-zm-yellow/25 hover:bg-zm-yellow/35"
+                        : "hover:bg-zm-green/5"
                   }`}
                   onClick={() => setSelectedBatchId(b.id)}
                 >
@@ -250,7 +262,8 @@ export default function LoyverseImportBatchHistory({
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           {filteredBatches.length === 0 && !batchesError && (
@@ -296,7 +309,7 @@ export default function LoyverseImportBatchHistory({
           {previewRows.length > 0 && previewKind === "payment_breakdown" && (
             <div className="overflow-x-auto max-h-[min(420px,52vh)] overflow-y-auto">
               <table className="min-w-[880px] w-full text-sm">
-                <thead className="bg-zm-cream/80 sticky top-0">
+                <thead className="sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream">
                   <tr>
                     <th className="text-left px-3 py-2 whitespace-nowrap">
                       Tipo de pago
@@ -324,7 +337,11 @@ export default function LoyverseImportBatchHistory({
                       key={
                         row.id != null ? row.id : `snap-pay-${selectedBatchId}-${idx}`
                       }
-                      className="border-t border-gray-100"
+                      className={
+                        highlightPreviewRows
+                          ? "border-t border-zm-green/10 bg-zm-yellow/30 hover:bg-zm-yellow/40"
+                          : "border-t border-gray-100"
+                      }
                     >
                       <td className="px-3 py-2 whitespace-nowrap">
                         {paymentTipoFromRow(row)}
@@ -363,7 +380,7 @@ export default function LoyverseImportBatchHistory({
           {previewRows.length > 0 && previewKind === "daily_summary" && (
             <div className="overflow-x-auto max-h-[min(420px,52vh)] overflow-y-auto">
               <table className="min-w-[920px] w-full text-sm">
-                <thead className="bg-zm-cream/80 sticky top-0">
+                <thead className="sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream">
                   <tr>
                     <th className="text-left px-3 py-2 whitespace-nowrap">
                       Fecha
@@ -398,7 +415,11 @@ export default function LoyverseImportBatchHistory({
                   {previewRows.map((row, idx) => (
                     <tr
                       key={row.id != null ? row.id : `snap-${selectedBatchId}-${idx}`}
-                      className="border-t border-gray-100"
+                      className={
+                        highlightPreviewRows
+                          ? "border-t border-zm-green/10 bg-zm-yellow/30 hover:bg-zm-yellow/40"
+                          : "border-t border-gray-100"
+                      }
                     >
                       <td className="px-3 py-2 whitespace-nowrap tabular-nums">
                         {formatDateLikeExcel(row.business_date)}
@@ -441,7 +462,7 @@ export default function LoyverseImportBatchHistory({
             previewKind !== "payment_breakdown" && (
             <div className="overflow-x-auto max-h-[min(320px,40vh)] overflow-y-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-zm-cream/80 sticky top-0">
+                <thead className="sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream">
                   <tr>
                     <th className="text-left px-3 py-2">Tipo</th>
                     <th className="text-left px-3 py-2">Fecha</th>
@@ -454,7 +475,11 @@ export default function LoyverseImportBatchHistory({
                   {previewRows.map((row, idx) => (
                     <tr
                       key={row.id != null ? row.id : `snap-${selectedBatchId}-${idx}`}
-                      className="border-t border-gray-100"
+                      className={
+                        highlightPreviewRows
+                          ? "border-t border-zm-green/10 bg-zm-yellow/30 hover:bg-zm-yellow/40"
+                          : "border-t border-gray-100"
+                      }
                     >
                       <td className="px-3 py-2 capitalize whitespace-nowrap">
                         {String(row.fact_type || "").replace(/_/g, " ")}

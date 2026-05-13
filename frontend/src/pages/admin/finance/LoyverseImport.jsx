@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { Navigate, useSearchParams, useLocation } from "react-router-dom";
 import {
   LoyverseResumenVentas,
+  LoyverseVentasPorArticulo,
   LoyverseVentasPorPago,
 } from "./LoyverseVentasTablas.jsx";
 
@@ -26,6 +27,7 @@ function ventasSubFromSearch(searchParams) {
   const s = searchParams.get("ventasSub");
   if (s === "resumen") return "resumen";
   if (s === "pago") return "pago";
+  if (s === "articulos") return "articulos";
   return "resumen";
 }
 
@@ -125,6 +127,7 @@ export default function LoyverseImport() {
               <div className="w-full max-w-[1600px] flex flex-wrap gap-1.5 py-1.5">
                 {ventasSubBtn("resumen", "Resumen de ventas")}
                 {ventasSubBtn("pago", "Ventas por tipo de pago")}
+                {ventasSubBtn("articulos", "Ventas por artículo")}
               </div>
             </div>
           )}
@@ -140,6 +143,13 @@ export default function LoyverseImport() {
 
       {mainTab === "ventas" && ventasSub === "pago" && (
         <LoyverseVentasPorPago
+          highlightBatchId={highlightBatchId}
+          onHighlightBatchIdChange={setHighlightBatchId}
+        />
+      )}
+
+      {mainTab === "ventas" && ventasSub === "articulos" && (
+        <LoyverseVentasPorArticulo
           highlightBatchId={highlightBatchId}
           onHighlightBatchIdChange={setHighlightBatchId}
         />
