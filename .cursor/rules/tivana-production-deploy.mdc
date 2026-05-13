@@ -1,0 +1,39 @@
+---
+description: Proteger el deploy a producción (Droplet Node 18 + Hostinger); no reintroducir gates que rompieron el CI.
+globs: "**/.github/workflows/deploy-*.yml,backend/package.json"
+alwaysApply: false
+---
+
+# Deploy a producción (no romper lo que ya funciona)
+
+Producción actual: **backend en Droplet con Node.js v18.x** (`npm ci` + PM2). El frontend se despliega con **GitHub Actions → Hostinger (FTPS)**. Esta regla aplica al editar **`deploy-backend.yml`**, **`deploy-frontend.yml`** o **`backend/package.json`**.
+
+## Backend (Droplet) — flujo que debe conservarse
+
+Referencia: **`.github/workflows/deploy-backend.yml`**. Tras `rsync` a `/var/www/backend/`, la secuencia válida es:
+
+1. `cd /var/www/backend`
+2. `npm ci --omit=dev` (o `npm install --omit=dev` si no hay lockfile)
+3. `pm2 restart tivana-backend`
+
+### Prohibido por defecto (rompió el deploy en la práctica)
+
+- **No** insertar en el script SSH un **`node -e '… process.exit(1)'`** (u otro chequeo) que **corte el job** si la versión de Node es &lt; 20, mientras el Droplet siga en **Node 18**. Eso impide llegar a `npm ci` y el deploy falla aunque antes funcionara.
+- **No** añadir en **`backend/package.json`** el campo **`"engines": { "node": ">=20…" }`** sin que el usuario **confirme por escrito** que el servidor de producción **ya** está en Node 20+ (los avisos `EBADENGINE` con Node 18 son tolerables; el **exit forzado** o políticas que bloqueen instalación no, hasta migrar servidor).
+
+### Si el producto exige Node 20+
+
+Orden obligatorio: **(1)** actualizar Node en el Droplet y verificar `node -v` / PM2; **(2)** entonces, si hace falta, documentar en la tarea y añadir `engines` o comprobaciones. Nunca al revés.
+
+## Frontend (Hostinger)
+
+- No renombrar ni eliminar los **secrets** esperados por **`deploy-frontend.yml`** (`FTP_HOST`, `FTP_USERNAME`, `FTP_PASSWORD`, etc.) sin actualizar el workflow y la documentación del hosting.
+- Los triggers por **`paths`** (`frontend/**`, el propio workflow) son intencionales; no quitar `workflow_dispatch` (redeploy manual).
+
+## Resumen
+
+| Área | Mantener |
+|------|-----------|
+| SSH backend | `rsync` → `npm ci` → `pm2 restart` sin gate de versión **hasta** migración real a Node 20 |
+| `package.json` backend | Sin `engines` estricto a Node 20 **hasta** migración acordada |
+| Redeploy | `workflow_dispatch` en ambos workflows sigue permitido |
