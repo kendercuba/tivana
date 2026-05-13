@@ -1,6 +1,8 @@
 name: Deploy Backend to Droplet
 
 on:
+  # Run from Actions tab when only frontend changed but you need backend redeployed.
+  workflow_dispatch:
   push:
     branches:
       - main
