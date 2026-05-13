@@ -323,7 +323,7 @@ export default function ZonaMarketAdminLayout() {
                   className={cn(NAV_ICON_LG, "text-lime-300")}
                   aria-hidden
                 />
-                <span className="drop-shadow-sm">Panel finanzas</span>
+                <span className="drop-shadow-sm">Resumen semanal</span>
               </NavLink>
 
               <div className="mt-1">
@@ -491,7 +491,7 @@ export default function ZonaMarketAdminLayout() {
                                 onLoyverseRoute && lvTab === "compras"
                               )}
                             >
-                              Resumen de compras
+                              Órdenes de compra
                             </Link>
                           </li>
                         </ul>
@@ -566,7 +566,7 @@ export default function ZonaMarketAdminLayout() {
                   className={cn(NAV_ICON_LG, "text-lime-300")}
                   aria-hidden
                 />
-                <span className="drop-shadow-sm">Panel finanzas</span>
+                <span className="drop-shadow-sm">Resumen semanal</span>
               </NavLink>
 
               <p className="mt-3 px-2 text-xs font-bold uppercase tracking-wider text-amber-200">
@@ -641,7 +641,7 @@ export default function ZonaMarketAdminLayout() {
                 )}
                 onClick={() => setFinanceFlyoutOpen(false)}
               >
-                Resumen de compras
+                Órdenes de compra
               </Link>
             </nav>
           </div>

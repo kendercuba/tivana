@@ -71,6 +71,7 @@ const CSV_HEADER = [
   "REF",
   "Nombre",
   "Categoría",
+  "Por peso",
   "Precio venta",
   "Coste",
   "Inventario",
@@ -87,6 +88,7 @@ function buildCsvRows(rows) {
         escapeCsvCell(p.ref),
         escapeCsvCell(p.name),
         escapeCsvCell(p.category),
+        escapeCsvCell(p.sold_by_weight ? "Sí" : "No"),
         escapeCsvCell(p.price),
         escapeCsvCell(p.purchase_cost),
         escapeCsvCell(p.quantity_on_hand),
@@ -431,7 +433,7 @@ export default function ZonaMarketArticleList() {
 
           {!loading && filtered.length > 0 && (
             <div className="max-h-[min(65vh,36rem)] sm:max-h-[min(70vh,42rem)] w-full overflow-y-auto overflow-x-auto rounded-lg border border-zm-green/15 bg-white shadow-sm [-webkit-overflow-scrolling:touch]">
-              <table className="w-full min-w-[920px] border-collapse text-sm">
+              <table className="w-full min-w-[1000px] border-collapse text-sm">
                 <thead className="sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream text-left text-zm-sidebar [&_th]:bg-zm-cream">
                   <tr>
                     <th className="px-3 py-2 font-semibold whitespace-nowrap">
@@ -439,6 +441,9 @@ export default function ZonaMarketArticleList() {
                     </th>
                     <th className="px-3 py-2 font-semibold">Nombre</th>
                     <th className="px-3 py-2 font-semibold">Categoría</th>
+                    <th className="px-3 py-2 text-center font-semibold whitespace-nowrap">
+                      Por peso
+                    </th>
                     <th className="px-3 py-2 text-right font-semibold whitespace-nowrap">
                       Precio venta
                     </th>
@@ -488,6 +493,9 @@ export default function ZonaMarketArticleList() {
                         <span className="truncate block" title={p.category || ""}>
                           {p.category || "—"}
                         </span>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-center text-gray-900 tabular-nums">
+                        {p.sold_by_weight === true ? "Sí" : "No"}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-900">
                         {formatPrice(p.price)}

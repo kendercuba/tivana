@@ -1,32 +1,54 @@
 ---
-description: Control «Seleccionar archivo» + Importar (estilo, tamaños y lógica Zona Market).
+description: Control «Seleccionar archivo(s)» + Importar (múltiples ficheros, estilo ZM / admin finanzas y resto del proyecto).
 alwaysApply: true
 ---
 
-# Caja «Seleccionar archivo» para cargar ficheros
+# Caja «Seleccionar archivo(s)» para cargar ficheros
 
-Cuando el usuario pida **subir un archivo**, **cargar Excel/CSV**, o un **input de fichero** en UI Zona Market / admin finanzas, replica el **mismo patrón visual y de comportamiento** que en `frontend/src/pages/admin/finance/LoyverseVentasTablas.jsx` (formularios de **Resumen de ventas** y **Ventas por tipo de pago**).
+Cuando el usuario pida **subir archivo(s)**, **cargar Excel/CSV**, o un **input de fichero** en UI **Zona Market**, **admin finanzas** o **cualquier otra pantalla del repo** que importe datos desde ficheros, sigue el patrón actual de `frontend/src/pages/admin/finance/LoyverseVentasTablas.jsx` (Resumen de ventas, Ventas por tipo de pago, Ventas por artículo) y el hook `frontend/src/hooks/admin/finance/useLoyverseImport.js`.
 
-## Comportamiento
+## Obligatorio: selección múltiple
 
-- **Sin archivo:** solo el botón/label **Seleccionar archivo** (no mostrar «Sin archivo» ni **Importar**).
-- **Con archivo:** mostrar nombre del fichero (truncado) + botón **Importar** en verde sólido.
-- Tras importación exitosa: limpiar fichero y resetear el input (p. ej. `key` incremental en el `<input type="file" />`).
-- Errores/importación: mensajes al usuario en **español**; lógica técnica e identificadores en inglés en código.
+- Todo `<input type="file" />` usado para **cargar / importar** datos debe llevar el atributo **`multiple`**. El usuario debe poder elegir **varios archivos a la vez** en el diálogo del sistema.
+- El **label** visible debe decir **«Seleccionar archivo(s)»** (o equivalente claro en español que indique varios).
+- El **`aria-label`** del input debe indicar **«uno o varios archivos…»** (o frase equivalente en español).
+- **Estado:** usar una lista (`File[]`), no un solo `File | null`, salvo que el contrato del backend sea estrictamente un solo fichero y el producto lo prohíba por escrito.
+- **Validación previa** (p. ej. `validateLoyverseReportHint`): ejecutar **por cada archivo** en orden; si uno falla, mostrar mensaje que incluya el **nombre del fichero** y limpiar la selección.
+- **Importación:** enviar **un archivo por petición** en **orden** (cola secuencial) para evitar timeouts y errores opacos; si falla el enésimo, los anteriores pueden haberse guardado ya — el error debe indicar qué archivo falló.
+- Tras importación **exitosa de todos**: limpiar lista y resetear el input (`key` incremental en el `<input type="file" />`).
+- **Con un solo archivo seleccionado:** mostrar su nombre (truncado) como hasta ahora.
+- **Con varios:** mostrar **«N archivos seleccionados»** y usar `title` con la lista de nombres (o primeros nombres + «…» si hace falta).
+- **Sin archivos:** solo el botón/label **Seleccionar archivo(s)** (no mostrar «Sin archivo» ni **Importar**).
+- Texto de carga del botón importar: **«Importando…»**; durante validación previa: **«Validando archivos…»** (UI español). Lógica técnica e identificadores en inglés en código.
 
 ## Marcado y clases (mantener tamaños)
 
 - **Formulario:** `flex flex-wrap items-center gap-2 min-w-0` (ajustar `w-full sm:w-auto ml-auto` solo si va alineado al toolbar como en Loyverse).
-- **Label + icono + texto «Seleccionar archivo»:**  
+- **Label + icono + texto «Seleccionar archivo(s)»:**  
   `cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40`
 - **Icono:** `Upload` de `lucide-react`, `className="h-4 w-4 shrink-0 opacity-90"`, `strokeWidth={2.25}`, `aria-hidden`.
-- **Input:** `type="file"`, `className="sr-only"`, `accept` según negocio (p. ej. `.xls,.xlsx,.csv`), `aria-label` en **español** descritivo del tipo de archivo.
-- **Nombre del archivo (solo si hay fichero):**  
-  `text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[14rem] font-medium`
+- **Input:** `type="file"`, **`multiple`**, `className="sr-only"`, `accept` según negocio (p. ej. `.xls,.xlsx,.csv`), `aria-label` en **español** (uno o varios archivos, tipo de reporte).
+- **Resumen de nombres (solo si hay ficheros):**  
+  `text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium` — ampliar `max-w` si hace falta para «N archivos seleccionados».
 - **Botón Importar:**  
-  `shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50`  
-  Texto del estado de carga: **«Importando…»** (UI español).
+  `shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50`
 
-La llamada al backend (`FormData`, hook, API) depende de cada pantalla; **no cambies** este layout salvo que el usuario pida otro diseño explícito. Si se repite en muchas rutas, **extrae un componente** reutilizable copiando estas clases y la lógica condicional.
+En pantallas **no ZM** (estilos grises/azules del admin clásico), mantén la **misma semántica** (`multiple`, lista de archivos, validación por fichero, import secuencial) aunque cambien las clases visuales.
+
+La llamada al backend (`FormData`, hook, API) depende de cada pantalla; reutiliza **`useLoyverseImport`** (`handleImport({ files, reportHint })`) donde aplique. Si se repite el patrón en muchas rutas, **extrae un componente** reutilizable copiando estas clases y la lógica condicional.
+
+## Resaltado amarillo de datos recién importados (obligatorio)
+
+Tras una importación **exitosa**, el usuario debe ver **en amarillo suave** las filas correspondientes al **último lote / última importación** (mismo criterio que **Resumen de ventas** y **Ventas por tipo de pago** en `LoyverseVentasTablas.jsx`).
+
+1. **Guardar el identificador** devuelto por el backend (p. ej. `importBatchId`, `importId`, `import_batch_id`) en estado del padre o en el resultado del hook del último archivo de una cola multi-fichero.
+2. **Pasarlo** a tablas e historiales como `highlightBatchId`, `highlightImportBatchId`, `preferredSelectBatchId`, `highlightImportId`, etc., según el componente.
+3. **Filas de datos** (`<tr>` o equivalente): si la fila pertenece a ese identificador (p. ej. `import_batch_id === highlightBatchId`, `import_batch_id === highlightImportBatchId`, `last_import_id === highlightLastImportId`), aplicar clases ZM del proyecto:
+   - `border-zm-green/10 bg-zm-yellow/30 hover:bg-zm-yellow/40`  
+   En vistas sin tokens `zm-*`, usar un equivalente legible (`amber`/`yellow` suave + borde) coherente con el contexto.
+4. **Historial de lotes / importaciones:** la fila del lote recién creado debe destacarse en amarillo aunque no esté seleccionada; la fila **seleccionada** puede usar un tono algo más intenso (`bg-zm-yellow/40`, anillo `ring-zm-green/25`, etc.). Referencia: `LoyverseImportBatchHistory.jsx`, `BankImportBatchHistory.jsx`.
+5. **Previsualización post-import:** si la tabla muestra filas del último lote importado, aplicar el mismo resaltado amarillo a esas filas cuando el lote mostrado coincide con `preferredSelectBatchId` (ver `LoyverseImportBatchHistory.jsx`).
+
+No sustituir este resaltado por `bg-zm-green/10` u otro color distinto salvo decisión explícita de producto; mantener **unificación visual** con Loyverse tablas.
 
 ---

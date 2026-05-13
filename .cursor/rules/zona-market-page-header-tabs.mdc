@@ -41,14 +41,18 @@ Si la vista principal debe coincidir con **Resumen / tabla** (`max-w-7xl`) pero 
 
 Patrón: `LoyverseVentasPorPago` en `LoyverseVentasTablas.jsx`.
 
+### 3.1 Textos explicativos bajo título o calendario (prohibido por defecto)
+
+- **No** añadir párrafos de ayuda o microcopy largo debajo del **título de página** (franja verde), de un **`h2` de sección** en card, del **selector de fechas / calendario** ni justo encima de una **tabla** solo para describir el flujo (p. ej. «El selector solo filtra…», «Solo aparecen cargas…», «Debe ser el export…», «Cada fila es…»), **salvo** que el usuario lo **pida explícitamente** en la tarea o PR.
+- **Sí** se permiten sin pedir permiso extra: mensajes de **error** / **validación** («Validando archivos…»), **estados vacíos** breves («No hay datos en este rango…»), **toasts**, y **avisos condicionales** que requieran acción inmediata (p. ej. datos incompletos que bloquean cálculos). La documentación de producto va fuera de la UI o en enlaces a manual, no en bloques bajo el toolbar.
+
 ## 4. Tablas de datos (misma línea que Loyverse)
 
 Cuando la página incluya **tabla de datos** o **historial en tabla**:
 
 **Contenedor**
 
-- `w-full overflow-x-auto` (y `overflow-y-auto` solo si la tabla tiene altura máxima con scroll interno).
-- Opcional: `[-webkit-overflow-scrolling:touch]` en el scroll horizontal.
+- `w-full overflow-x-auto` y, si la tabla debe tener **cabecera fija** al desplazarse, un **`max-h-[…]`** razonable con **`overflow-y-auto`** (y el mismo contenedor con `overflow-x-auto`); el `sticky` del `<thead>` solo funciona respecto al scroll de ese ancestro. Opcional: `[-webkit-overflow-scrolling:touch]`.
 
 **Elemento `<table>`**
 
@@ -57,7 +61,8 @@ Cuando la página incluya **tabla de datos** o **historial en tabla**:
 
 **Cabecera `<thead>`**
 
-- Fondo acorde al contexto: p. ej. `bg-zm-cream/80` (ZM) o `bg-gray-100`; si hay scroll vertical en el cuerpo, `sticky top-0 z-10`.
+- ZM: fondo **opaco** y cabecera fija cuando hay scroll vertical interno: **`sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream`** (ver **`zona-market-table-typography-identity.mdc`**). No usar `bg-zm-cream/80` en thead con scroll.
+- Admin clásico: p. ej. **`bg-gray-100 [&_th]:bg-gray-100`** con el mismo `sticky top-0 z-10` si aplica.
 
 **Celdas con texto largo**
 

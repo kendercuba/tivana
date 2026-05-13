@@ -41,6 +41,15 @@ function parseNum(val) {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Loyverse «Vendido por peso»: Y = kg, N = unidad. */
+function parseSoldByWeight(val) {
+  if (val == null || val === "") return false;
+  if (typeof val === "boolean") return val;
+  const s = String(val).trim().toUpperCase();
+  if (s === "Y" || s === "YES" || s === "1" || s === "TRUE") return true;
+  return false;
+}
+
 function pick(norm, ...aliases) {
   for (const a of aliases) {
     const key = normalizeHeaderKey(a);
@@ -125,6 +134,9 @@ function mapNormRowToRecord(norm, rowArray) {
       pick(norm, "Stock óptimo", "Stock optimo", "Stock óptimo [ZONA MARKET]")
     ),
     barcode: cellStr(pick(norm, "Codigo de barras", "Código de barras")),
+    sold_by_weight: parseSoldByWeight(
+      pick(norm, "Vendido por peso", "Vendido por Peso")
+    ),
   };
 }
 
@@ -175,9 +187,10 @@ const UPSERT_SQL = `
 INSERT INTO zm_loyverse_items (
   handle, item_ref, name, category_name, price, purchase_cost,
   quantity_on_hand, low_stock_threshold, optimal_stock, barcode,
+  sold_by_weight,
   last_import_id, updated_at
 ) VALUES (
-  $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW()
+  $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW()
 )
 ON CONFLICT (handle) DO UPDATE SET
   item_ref = EXCLUDED.item_ref,
@@ -189,6 +202,7 @@ ON CONFLICT (handle) DO UPDATE SET
   low_stock_threshold = EXCLUDED.low_stock_threshold,
   optimal_stock = EXCLUDED.optimal_stock,
   barcode = EXCLUDED.barcode,
+  sold_by_weight = EXCLUDED.sold_by_weight,
   last_import_id = EXCLUDED.last_import_id,
   updated_at = NOW()
 `;
@@ -205,6 +219,7 @@ function rowParams(rec, importId) {
     rec.low_stock_threshold,
     rec.optimal_stock,
     rec.barcode,
+    Boolean(rec.sold_by_weight),
     importId,
   ];
 }
@@ -261,6 +276,7 @@ export async function listZmLoyverseItems() {
        low_stock_threshold,
        optimal_stock,
        barcode,
+       sold_by_weight,
        last_import_id,
        updated_at
      FROM zm_loyverse_items

@@ -1,0 +1,41 @@
+---
+description: Marco contable ZM (caja, inventario, Loyverse, compras vs gastos) y checklist de implementación por pasos
+alwaysApply: true
+---
+
+# Zona Market — contabilidad de gestión (recordatorio + roadmap)
+
+Usar este documento cuando se trabaje en **finanzas**, **Loyverse**, **banco**, **inventario ZM** o **panel de ganancias**. Copy de UI en español; código en inglés (regla del repo).
+
+## Principios (no negociar sin decisión explícita)
+
+1. **Compras de mercancía** = dinero convertido en **stock** (activo de giro), no el mismo concepto que “gasto operativo” del mes.
+2. **Gastos** (nómina, servicios, comisiones, etc.) = reducen **ganancia** y suelen reducir **caja** de inmediato.
+3. Tres números para evitar mezclar caja con inventario:
+   - **Caja real** (banco + efectivo − obligaciones inmediatas).
+   - **Comprometido con inventario** (capital de giro que no se “presta” a otros rubros).
+   - **Discrecional** = caja − comprometido − **colchón** (definir regla: monto fijo, % de ventas, o valor de stock a coste).
+4. **Bulto/caja**: registrar **unidad de compra** y **punto de pedido**; no esperar solo “caja vacía” si hay riesgo de rotura de stock.
+5. **Fuentes de verdad**: Loyverse = ventas/desglose USD; banco = Bs reales; tasa del día = puente contable; stock = export/import de artículos o equivalente.
+
+## Qué ya existe en este repositorio (hecho)
+
+Marcar mentalmente como **completado** para el flujo base:
+
+- [x] Import Loyverse ventas: **resumen diario**, **por tipo de pago** y **por artículo** (UI + `item_line` en backend) — `LoyverseVentasTablas.jsx`, `LoyverseImport.jsx`, `loyverseExcelParser.mjs` / `loyverseImportService.mjs`
+- [x] **Tasa del día** por fecha de negocio — `finance_loyverse_daily_exchange_rates`, `loyverseDailyRatesService.mjs`, API en `loyverse.routes.mjs` / `loyverseApi.js`
+- [x] **Banco**: import Excel, movimientos, historial de cargas, categorías (incl. “Compra inventario”, “Nómina”, …) — `FinanceBankHub.jsx`, `BankImport.jsx`, `bankMovementClassifier.mjs`, `FinanceDashboard.jsx` (resumen por categoría)
+- [x] **Stock / catálogo ZM** desde export Loyverse artículos (cantidades, coste, alertas) — `ZonaMarketArticleList.jsx`, `zmLoyverseItemsService.mjs`, migraciones `zm_loyverse_items*`
+
+## Próximos pasos sugeridos (orden; el agente indica el siguiente según el estado del código)
+
+Completar **en orden** salvo que el producto pida otro criterio:
+
+1. **Operación diaria documentada en UI** (texto de ayuda o página “Cómo cerrar el día”): Loyverse después del cierre → tasa del día D → banco cuando los movimientos D estén completos → revisar diferencias.
+2. **Conciliación Loyverse (USD) vs banco (Bs)** por día o semana: vista o export que compare totales con la tasa guardada (aunque sea v1 manual con alertas).
+3. **Registro explícito de compras** (factura/nota, proveedor, Bs, vínculo a “Compra inventario” o tabla dedicada) distinto del solo movimiento bancario clasificado — para saber **coste de bulto** y no solo que salió dinero.
+4. **Capital comprometido / colchón**: parámetros configurables + panel “caja libre vs reservada” (aunque v1 sea un solo campo “reserva inventario Bs”).
+5. **Lista de recompra**: cruce **stock actual** + **ventas por artículo** (velocidad) + **coste próximo bulto** → alertas “en N días te quedas sin X; hacen falta ~Y Bs”.
+6. **P&L analítico**: ingreso (Loyverse × tasa), coste de ventas (de compras), gastos, nómina, comisiones — “efecto tasa” como diferencia documentada, no magia automática.
+
+Cuando el usuario pida “seguimos el roadmap”, el agente debe: **leer este archivo**, marcar qué ítems de “Próximos pasos” ya están implementados en código, y proponer **solo el siguiente paso** con archivos concretos.

@@ -52,6 +52,8 @@ export default function LoyversePorPagoDateRange({
   onApplyRange,
   dataMinYmd,
   dataMaxYmd,
+  /** When set, opening the popover shows this month first (e.g. last day with data). */
+  calendarMonthAnchorYmd,
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(undefined);
@@ -122,12 +124,16 @@ export default function LoyversePorPagoDateRange({
     const to = rangeEnd ? ymdToLocalDate(rangeEnd) : undefined;
     if (from) {
       setDraft({ from, to: to ?? from });
-      setVisibleMonth(from);
+      const anchorRaw = calendarMonthAnchorYmd?.slice(0, 10);
+      const anchorDate = anchorRaw ? ymdToLocalDate(anchorRaw) : undefined;
+      setVisibleMonth(
+        anchorDate && !Number.isNaN(anchorDate.getTime()) ? anchorDate : from
+      );
     } else {
       setDraft(undefined);
       setVisibleMonth(new Date());
     }
-  }, [open, rangeStart, rangeEnd]);
+  }, [open, rangeStart, rangeEnd, calendarMonthAnchorYmd]);
 
   function triggerLabel() {
     if (!rangeStart || !rangeEnd) return "Elegir fechas";
@@ -215,7 +221,7 @@ export default function LoyversePorPagoDateRange({
     const t = to ?? from;
     onApplyRange?.(localDateToYmd(from), localDateToYmd(t));
     setDraft({ from, to: t });
-    setVisibleMonth(from);
+    setVisibleMonth(calendarMonthAnchorYmd ? t : from);
     setOpen(false);
   }
 
@@ -229,7 +235,7 @@ export default function LoyversePorPagoDateRange({
     const hi = from.getTime() <= to.getTime() ? to : from;
     onApplyRange?.(localDateToYmd(lo), localDateToYmd(hi));
     setDraft({ from: lo, to: hi });
-    setVisibleMonth(lo);
+    setVisibleMonth(calendarMonthAnchorYmd ? hi : lo);
     setOpen(false);
   }
 

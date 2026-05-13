@@ -1,0 +1,89 @@
+---
+description: Tablas y cuerpo de texto ZM con la misma fuente, color y tamaño que «Resumen de ventas» (LoyverseVentasTablas).
+alwaysApply: true
+---
+
+# Identidad visual: tablas y tipografía (referencia «Resumen de ventas»)
+
+En **admin finanzas / Zona Market** (y cualquier pantalla nueva alineada con esa marca), las **tablas de datos** y el **texto de apoyo** alrededor deben verse como la pestaña **Tabla resumen** de **«Resumen de ventas»** en `frontend/src/pages/admin/finance/LoyverseVentasTablas.jsx` (`LoyverseResumenVentas`). No introducir tamaños, grises o familias distintas «por gusto»; si hace falta otra jerarquía, debe ser **explícita en producto**.
+
+Convive con **`zona-market-branding-ui.mdc`** (tokens `zm-*`), **`zona-market-page-header-tabs.mdc`** (cabecera y anchos) y **`ui-responsive.mdc`**.
+
+## 1. Fuente y raíz de la vista
+
+- Superficie ZM / admin alineado: **`font-zm`** en la raíz del bloque de la vista (como `LoyverseResumenVentas`: `className="w-full max-w-7xl font-zm"` o el contenedor equivalente que ya envuelva la tabla).
+- No mezclar otra familia (p. ej. solo `font-sans` del tema global) en tablas ZM si el resto de la vista ya usa `font-zm`.
+
+## 2. Tabla de datos — patrón canónico (copiar de Resumen)
+
+**Contenedor de scroll** (datos con muchas filas — Resumen, Ventas por artículo, etc.):
+
+- **Horizontal + vertical:**  
+  `max-h-[min(65vh,36rem)] sm:max-h-[min(70vh,42rem)] overflow-y-auto overflow-x-auto border border-zm-green/15 rounded-lg bg-white shadow-sm`  
+  (ajustar `min-h`/`max-h` si la vista reserva más o menos chrome; historiales compactos pueden usar `max-h-[min(17rem,42vh)]`, etc.)
+- Solo horizontal cuando la tabla es corta y no hace falta scroll interno:  
+  `overflow-x-auto border border-zm-green/15 rounded-lg bg-white shadow-sm`
+- Opcional: `[-webkit-overflow-scrolling:touch]` en móvil.
+
+**Importante:** sin **`overflow-y-auto`** (o `overflow-auto`) en un ancestro con **altura máxima**, `position: sticky` en el `<thead>` **no fija** la cabecera al hacer scroll de la página; el scroll vertical debe ser **dentro** del contenedor de la tabla cuando se requiera cabecera fija.
+
+**`<table>`**
+
+- `min-w-[920px] w-full text-sm` — ajustar solo el `min-w-[…]` si la vista necesita más columnas (p. ej. `min-w-[960px]`–`min-w-[1120px]` como en otras tablas Loyverse), pero **mantener** `w-full text-sm` salvo decisión de producto.
+
+**`<thead>` — fijo + fondo opaco (obligatorio en tablas ZM con scroll interno)**
+
+- **No** usar `bg-zm-cream/80` ni otros fondos de cabecera con **opacidad** (`/80`, `/70` en el fondo del thead): al hacer scroll se ve el contenido detrás.
+- Patrón estándar:  
+  **`sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream`**  
+  (`[&_th]:bg-zm-cream` asegura que cada `<th>` pinte opaco en todos los navegadores con cabecera sticky.)
+- Tablas **no ZM** (admin clásico): cabecera sticky con fondo **sólido** equivalente, p. ej. **`bg-gray-100 [&_th]:bg-gray-100`**, nunca `bg-gray-100/80` en el thead si debe tapar filas al scroll.
+
+**`<th>`**
+
+- Padding base: **`px-3 py-2`** (no `px-2` / `py-1.5` en tablas «grandes» tipo resumen salvo tablas compactas de historial ya existentes).
+- Alineación: `text-left` o `text-right` según columna; `whitespace-nowrap` donde evite saltos raros.
+- Cabeceras con subtítulo unidad (p. ej. «(USD)»): dos `<span className="block">`; el secundario **`text-[10px] font-normal text-gray-500`** (como en Resumen).
+- Columnas de metadatos tipo «Lote»: **`text-xs font-normal text-gray-500`** (y `text-right` si aplica).
+
+**`<tbody>` — filas**
+
+- Separación: **`border-t border-gray-100`**
+- Hover fila normal: **`hover:bg-gray-50`**
+- Resaltado «última importación»: **`border-zm-green/10 bg-zm-yellow/30 hover:bg-zm-yellow/40`** (no sustituir por `bg-zm-green/10` en filas de datos nuevas).
+
+**`<td>` de datos**
+
+- Padding estándar: **`px-3 py-2`**
+- Fechas / celdas cortas: `whitespace-nowrap` cuando corresponda.
+- Metadatos discretos (lote, ids): **`text-xs text-gray-400 font-mono`** o el patrón ya usado en Resumen para la columna Lote.
+- Números: **`tabular-nums`** en importes y cantidades.
+
+**Celdas USD + Bs en columna** (si se replica el patrón dual):
+
+- Reutilizar el mismo criterio que **`UsdDualCell`** con `numericSize="comfort"` en ese archivo: línea USD `text-[15px] leading-snug tabular-nums`, línea Bs `text-[14px] sm:text-[15px] … text-orange-600 font-semibold tabular-nums`, padding `px-3 py-2`, alineación `text-right`.
+- Solo usar `numericSize="large"` donde ya exista una tabla «cómoda» equivalente (p. ej. ventas por tipo de pago), no mezclar tamaños grandes y pequeños en la misma familia de reportes sin motivo.
+
+## 3. Texto alrededor de la tabla (estados)
+
+Misma escala que en `LoyverseResumenVentas`:
+
+- **Error:** `text-sm text-zm-red`
+- **Cargando:** `text-sm text-gray-500`
+- **Vacío / ayuda:** `text-sm text-gray-600`
+
+No usar `text-xs` para párrafos de ayuda principal si Resumen usa `text-sm`, salvo textos realmente secundarios (badges, hints de una línea). Los **párrafos tutorial bajo título o calendario** están prohibidos por defecto: ver **`zona-market-page-header-tabs.mdc`** (apartado **3.1**).
+
+## 4. Cards / sección que envuelve toolbar + tabla
+
+- Bloque blanco con borde suave: **`rounded-xl border border-zm-green/20 bg-white p-3 sm:p-4 shadow-sm`** (como la `<section>` que envuelve calendario + carga en Resumen).
+
+## 5. Qué no hacer
+
+- No cambiar arbitrariamente `text-xs sm:text-sm` en `<table>` frente al patrón **`text-sm`** del `<table>` de Resumen.
+- No usar `text-gray-500` para cuerpo principal de datos cuando Resumen usa **`text-gray-900` / `font-semibold`** en importes.
+- No usar **fondos semitransparentes en el `<thead>`** de tablas con scroll vertical interno (`bg-zm-cream/80`, `bg-zm-yellow/35`, etc.): usar **`bg-zm-cream`** (u otro token **sin** sufijo de opacidad) + **`[&_th]:bg-…`**.
+
+## 6. Referencia rápida en código
+
+Tomar como bloque de referencia las líneas del contenedor + `<table>` + `<thead>`/`<tbody>` de **`LoyverseResumenVentas`** y **«Ventas por artículo»** (`LoyverseVentasPorArticulo`) en `LoyverseVentasTablas.jsx` — incluido **scroll interno** + **cabecera sticky opaca**. Las tablas de **historial** con muchas columnas pueden mantener `text-xs sm:text-sm` **solo** donde ya esté fijado; deben seguir el mismo criterio de **thead sólido + sticky** si tienen `overflow-y` con altura máxima.

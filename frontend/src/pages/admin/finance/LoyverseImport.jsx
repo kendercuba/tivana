@@ -5,12 +5,25 @@ import {
   LoyverseVentasPorArticulo,
   LoyverseVentasPorPago,
 } from "./LoyverseVentasTablas.jsx";
+import ZmPurchaseOrders from "./ZmPurchaseOrders.jsx";
 
 const LOYVERSE_HIGHLIGHT_BATCH_STORAGE_KEY = "zm-loyverse-import-highlight-batch";
+const ZM_PO_HIGHLIGHT_BATCH_STORAGE_KEY = "zm-purchase-orders-highlight-batch";
 
 function readStoredHighlightBatchId() {
   try {
     const raw = sessionStorage.getItem(LOYVERSE_HIGHLIGHT_BATCH_STORAGE_KEY);
+    if (raw == null || raw === "") return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function readStoredPoHighlightBatchId() {
+  try {
+    const raw = sessionStorage.getItem(ZM_PO_HIGHLIGHT_BATCH_STORAGE_KEY);
     if (raw == null || raw === "") return null;
     const n = Number(raw);
     return Number.isFinite(n) ? n : null;
@@ -41,6 +54,10 @@ export default function LoyverseImport() {
     readStoredHighlightBatchId()
   );
 
+  const [poHighlightBatchId, setPoHighlightBatchIdState] = useState(() =>
+    readStoredPoHighlightBatchId()
+  );
+
   const setHighlightBatchId = useCallback((next) => {
     setHighlightBatchIdState(next);
     try {
@@ -49,6 +66,22 @@ export default function LoyverseImport() {
       } else {
         sessionStorage.setItem(
           LOYVERSE_HIGHLIGHT_BATCH_STORAGE_KEY,
+          String(next)
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const setPoHighlightBatchId = useCallback((next) => {
+    setPoHighlightBatchIdState(next);
+    try {
+      if (next == null || next === "") {
+        sessionStorage.removeItem(ZM_PO_HIGHLIGHT_BATCH_STORAGE_KEY);
+      } else {
+        sessionStorage.setItem(
+          ZM_PO_HIGHLIGHT_BATCH_STORAGE_KEY,
           String(next)
         );
       }
@@ -156,15 +189,10 @@ export default function LoyverseImport() {
       )}
 
       {mainTab === "compras" && (
-        <div className="px-4 pt-4 pb-8 max-w-4xl w-full">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-            <h2 className="text-lg font-semibold text-gray-800">Compras</h2>
-            <p className="text-sm text-gray-500 mt-2">
-              Esta sección está preparada para cuando importemos o consultemos
-              compras relacionadas con Loyverse.
-            </p>
-          </div>
-        </div>
+        <ZmPurchaseOrders
+          highlightBatchId={poHighlightBatchId}
+          onHighlightBatchIdChange={setPoHighlightBatchId}
+        />
       )}
     </div>
   );

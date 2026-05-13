@@ -32,6 +32,7 @@ CREATE TABLE zm_loyverse_items (
   low_stock_threshold NUMERIC(18, 6),
   optimal_stock       NUMERIC(18, 6),
   barcode             TEXT,
+  sold_by_weight      BOOLEAN NOT NULL DEFAULT false,
   last_import_id      BIGINT REFERENCES zm_loyverse_item_imports (id) ON DELETE SET NULL,
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT zm_loyverse_items_handle_unique UNIQUE (handle)
@@ -54,3 +55,5 @@ COMMENT ON COLUMN zm_loyverse_items.purchase_cost IS 'Solo columna «Coste» del
 COMMENT ON COLUMN zm_loyverse_items.quantity_on_hand IS 'En inventario [tienda] del export.';
 COMMENT ON COLUMN zm_loyverse_items.low_stock_threshold IS 'Existencias bajas [tienda] del export.';
 COMMENT ON COLUMN zm_loyverse_items.optimal_stock IS 'Stock óptimo [tienda] del export.';
+COMMENT ON COLUMN zm_loyverse_items.sold_by_weight IS
+  'Export «Vendido por peso»: true = Y (kg), false = N (unidad).';

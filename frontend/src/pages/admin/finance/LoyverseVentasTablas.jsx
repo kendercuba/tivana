@@ -15,6 +15,9 @@ import useLoyverseImport from "../../../hooks/admin/finance/useLoyverseImport";
 const LOYVERSE_UPLOAD_ACCEPT =
   ".xls,.xlsx,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
+/** Local draft for POS batch / lote number per business day (card sales ↔ bank later). */
+const LOYVERSE_CARD_POS_BATCH_STORAGE_KEY = "zm_loyverse_card_pos_batch_by_date";
+
 function formatDateShort(value) {
   if (!value) return "—";
   const d = new Date(`${String(value).slice(0, 10)}T12:00:00`);
@@ -183,73 +186,70 @@ function paymentMethodSortKey(pm) {
 const paymentNumericCellClass =
   "text-right tabular-nums text-base sm:text-lg font-semibold text-gray-900";
 
-/** Wrapper for txn / refund count cells (reliable centering inside table-fixed). */
+/** Wrapper for txn / refund count cells: right-aligned block, balanced padding (Ventas por tipo de pago). */
 const paymentCountInnerClass =
-  "flex w-full min-h-[1.25rem] items-center justify-center tabular-nums text-base sm:text-lg font-semibold text-gray-900";
+  "flex w-full min-h-[1.25rem] items-center justify-end tabular-nums text-base sm:text-lg font-semibold text-gray-900";
 
-/** Icon + label for payment breakdown rows (Zona Market palette). */
+/** Icon + label for payment breakdown rows (icons only, no framed boxes; aligned on one line). */
 function PaymentMethodWithIcon({ paymentMethod }) {
   const key = String(paymentMethod || "").trim().toLowerCase();
   const label = formatPaymentMethodLabel(paymentMethod);
 
-  const wrap =
-    "inline-flex min-w-0 items-center gap-2 text-sm sm:text-base font-semibold text-gray-900";
+  const row =
+    "flex min-h-[1.75rem] w-full min-w-0 items-center justify-start gap-2.5 text-left text-sm sm:text-base font-semibold text-gray-900";
+  const iconClass = "h-5 w-5 shrink-0 sm:h-[1.35rem] sm:w-[1.35rem]";
 
   if (key === "efectivo") {
     return (
-      <span className={wrap}>
-        <span
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zm-yellow/40 text-zm-sidebar ring-2 ring-zm-yellow/70"
+      <span className={row}>
+        <Banknote
+          className={`${iconClass} text-amber-800`}
+          strokeWidth={2.25}
           aria-hidden
-        >
-          <Banknote className="h-[1.15rem] w-[1.15rem] sm:h-5 sm:w-5" strokeWidth={2.25} />
-        </span>
+        />
         <span className="min-w-0 leading-snug">{label}</span>
       </span>
     );
   }
   if (key === "pago_movil") {
     return (
-      <span className={wrap}>
-        <span
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zm-green/20 text-zm-green ring-2 ring-zm-green/35"
+      <span className={row}>
+        <Smartphone
+          className={`${iconClass} text-zm-green`}
+          strokeWidth={2.25}
           aria-hidden
-        >
-          <Smartphone className="h-[1.15rem] w-[1.15rem] sm:h-5 sm:w-5" strokeWidth={2.25} />
-        </span>
+        />
         <span className="min-w-0 leading-snug">{label}</span>
       </span>
     );
   }
   if (key === "pos") {
     return (
-      <span className={wrap}>
-        <span
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zm-sidebar text-white ring-2 ring-zm-green/40"
+      <span className={row}>
+        <CreditCard
+          className={`${iconClass} text-zm-sidebar`}
+          strokeWidth={2.25}
           aria-hidden
-        >
-          <CreditCard className="h-[1.15rem] w-[1.15rem] sm:h-5 sm:w-5" strokeWidth={2.25} />
-        </span>
+        />
         <span className="min-w-0 leading-snug">{label}</span>
       </span>
     );
   }
   if (key === "zelle") {
     return (
-      <span className={wrap}>
-        <span
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zm-red/12 text-zm-red ring-2 ring-zm-red/30"
+      <span className={row}>
+        <Send
+          className={`${iconClass} text-zm-red`}
+          strokeWidth={2.25}
           aria-hidden
-        >
-          <Send className="h-[1.15rem] w-[1.15rem] sm:h-5 sm:w-5" strokeWidth={2.25} />
-        </span>
+        />
         <span className="min-w-0 leading-snug">{label}</span>
       </span>
     );
   }
 
   return (
-    <span className={`${wrap} pl-0.5`}>
+    <span className={row}>
       <span className="min-w-0 leading-snug">{label}</span>
     </span>
   );
@@ -322,12 +322,22 @@ function UsdDualCell({
       ? "text-sm sm:text-base font-semibold tabular-nums leading-tight text-orange-600"
       : "text-[14px] sm:text-[15px] leading-snug text-orange-600 font-semibold tabular-nums";
 
+  const bsWrapClass =
+    numericSize === "large"
+      ? "whitespace-nowrap"
+      : "break-all sm:break-normal";
+
+  const innerFlexClass =
+    numericSize === "large"
+      ? "flex w-full flex-col items-end justify-center gap-0.5 text-right sm:gap-1 whitespace-nowrap"
+      : "flex min-w-0 flex-col items-end justify-center gap-0.5 sm:gap-1";
+
   return (
     <td className={`${pad} text-right align-middle ${line1Class}`}>
-      <div className="flex min-w-0 flex-col items-end justify-center gap-0.5 sm:gap-1">
+      <div className={innerFlexClass}>
         <span className={usdSize}>{usdText}</span>
         {bsLine != null && (
-          <span className={`${bsSize} break-all sm:break-normal`}>
+          <span className={`${bsSize} ${bsWrapClass}`}>
             Bs {formatBs(bsLine)}
           </span>
         )}
@@ -369,12 +379,22 @@ function UsdBsAggregateCell({
       ? "text-sm sm:text-base font-semibold tabular-nums leading-tight text-orange-600"
       : "text-[14px] sm:text-[15px] leading-snug text-orange-600 font-semibold tabular-nums";
 
+  const bsWrapClass =
+    numericSize === "large"
+      ? "whitespace-nowrap"
+      : "break-all sm:break-normal";
+
+  const innerFlexClass =
+    numericSize === "large"
+      ? "flex w-full flex-col items-end justify-center gap-0.5 text-right sm:gap-1 whitespace-nowrap"
+      : "flex min-w-0 flex-col items-end justify-center gap-0.5 sm:gap-1";
+
   return (
     <td className={`${pad} text-right align-middle ${line1Class}`}>
-      <div className="flex min-w-0 flex-col items-end justify-center gap-0.5 sm:gap-1">
+      <div className={innerFlexClass}>
         <span className={usdSize}>{usdText}</span>
         {showBs && (
-          <span className={`${bsSize} break-all sm:break-normal`}>
+          <span className={`${bsSize} ${bsWrapClass}`}>
             Bs {formatBs(bsSum)}
           </span>
         )}
@@ -1084,6 +1104,32 @@ export function LoyverseVentasPorPago({
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
   const [rangeBootstrapped, setRangeBootstrapped] = useState(false);
+  /** YYYY-MM-DD → lote POS (tarjeta); borrador local hasta cruce con banco. */
+  const [posBatchByDate, setPosBatchByDate] = useState(() => {
+    try {
+      const raw = localStorage.getItem(LOYVERSE_CARD_POS_BATCH_STORAGE_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const persistPosBatchByDate = useCallback((dateYmd, value) => {
+    setPosBatchByDate((prev) => {
+      const next = { ...prev, [dateYmd]: value };
+      try {
+        localStorage.setItem(
+          LOYVERSE_CARD_POS_BATCH_STORAGE_KEY,
+          JSON.stringify(next)
+        );
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
 
   const refreshFacts = useCallback(async () => {
     try {
@@ -1182,6 +1228,22 @@ export function LoyverseVentasPorPago({
     if (uniq.length === 0) return { dataMinYmd: "", dataMaxYmd: "" };
     return { dataMinYmd: uniq[0], dataMaxYmd: uniq[uniq.length - 1] };
   }, [rows]);
+
+  /** Last day with payment data in the current range (calendar opens on this month on this page). */
+  const calendarMonthAnchorYmd = useMemo(() => {
+    if (!rangeStart || !rangeEnd || rows.length === 0) {
+      return dataMaxYmd || rangeEnd || rangeStart || "";
+    }
+    const lo = minYmd(rangeStart, rangeEnd);
+    const hi = maxYmd(rangeStart, rangeEnd);
+    let best = "";
+    for (const r of rows) {
+      const d = String(r.business_date || "").slice(0, 10);
+      if (!d || d < lo || d > hi) continue;
+      if (!best || d > best) best = d;
+    }
+    return best || dataMaxYmd || rangeEnd || rangeStart;
+  }, [rows, rangeStart, rangeEnd, dataMaxYmd]);
 
   const filteredRows = useMemo(() => {
     if (!rangeStart || !rangeEnd) return rows;
@@ -1380,6 +1442,7 @@ export function LoyverseVentasPorPago({
     const header = [
       "Fecha",
       "Tasa del día (Bs)",
+      "Lote punto de venta",
       "Tipo de pago",
       "Transacciones de pago",
       "Importe del pago (USD)",
@@ -1397,10 +1460,15 @@ export function LoyverseVentasPorPago({
           ? String(day.rateBs)
           : "";
       for (const r of day.methods) {
+        const isPos =
+          String(r.payment_method || "").trim().toLowerCase() === "pos";
+        const lote =
+          isPos ? String(posBatchByDate[day.dateYmd] ?? "").trim() : "";
         lines.push(
           [
             day.dateYmd,
             tasa,
+            lote,
             formatPaymentMethodLabel(r.payment_method),
             r.txns,
             r.importePago.toFixed(2),
@@ -1417,6 +1485,7 @@ export function LoyverseVentasPorPago({
     lines.push(
       [
         "Total",
+        "",
         "",
         "",
         grandTotal.txns,
@@ -1511,6 +1580,7 @@ export function LoyverseVentasPorPago({
                         rangeEnd={rangeEnd}
                         dataMinYmd={dataMinYmd}
                         dataMaxYmd={dataMaxYmd}
+                        calendarMonthAnchorYmd={calendarMonthAnchorYmd}
                         onApplyRange={(startYmd, endYmd) => {
                           setRangeStart(startYmd);
                           setRangeEnd(endYmd);
@@ -1597,16 +1667,17 @@ export function LoyverseVentasPorPago({
                 </div>
 
             <div className="w-full max-w-full max-h-[min(65vh,36rem)] sm:max-h-[min(70vh,42rem)] overflow-y-auto overflow-x-auto rounded-b-xl border border-zm-green/15 bg-white shadow-sm [-webkit-overflow-scrolling:touch]">
-              <table className="w-full min-w-[800px] max-w-full table-fixed border-collapse text-sm sm:text-base">
+              <table className="w-full min-w-[1100px] max-w-full table-fixed border-collapse text-sm sm:text-base">
                 <colgroup>
-                  <col className="w-[11%]" />
                   <col className="w-[10%]" />
-                  <col className="w-[13%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[18%]" />
-                  <col className="w-[10%]" />
+                  <col className="w-[9%]" />
                   <col className="w-[15%]" />
-                  <col className="w-[13%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[6%]" />
+                  <col className="w-[17%]" />
+                  <col className="w-[6%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[12%]" />
                 </colgroup>
                 <thead className="sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream text-zm-sidebar">
                   <tr>
@@ -1625,7 +1696,14 @@ export function LoyverseVentasPorPago({
                     </th>
                     <th
                       scope="col"
-                      className="text-center px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight"
+                      className="text-center px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight whitespace-nowrap"
+                      aria-label="Lote del punto de venta para tarjeta"
+                    >
+                      Lote punto de venta
+                    </th>
+                    <th
+                      scope="col"
+                      className="text-left px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight"
                       aria-label="Tipo de pago"
                     >
                       <span className="hidden min-[400px]:inline">Tipo de pago</span>
@@ -1633,7 +1711,7 @@ export function LoyverseVentasPorPago({
                     </th>
                     <th
                       scope="col"
-                      className="text-center px-1 py-1.5 sm:px-1.5 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight"
+                      className="text-right px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight"
                       aria-label="Transacciones de pago"
                     >
                       <span className="hidden sm:inline">Transacciones</span>
@@ -1641,14 +1719,14 @@ export function LoyverseVentasPorPago({
                     </th>
                     <th
                       scope="col"
-                      className="text-center px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight whitespace-nowrap"
+                      className="text-right px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight whitespace-nowrap"
                       aria-label="Importe del pago en dólares y bolívares"
                     >
                       Imp. pago
                     </th>
                     <th
                       scope="col"
-                      className="text-center px-1 py-1.5 sm:px-1.5 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight"
+                      className="text-right px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight"
                       aria-label="Reembolso de transacciones"
                     >
                       <span className="hidden sm:inline">Reembolsos</span>
@@ -1656,14 +1734,14 @@ export function LoyverseVentasPorPago({
                     </th>
                     <th
                       scope="col"
-                      className="text-center px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight whitespace-nowrap"
+                      className="text-right px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight whitespace-nowrap"
                       aria-label="Importe de reembolsos en dólares y bolívares"
                     >
                       Imp. reemb.
                     </th>
                     <th
                       scope="col"
-                      className="text-center px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight whitespace-nowrap"
+                      className="text-right px-1.5 py-1.5 sm:px-2 sm:py-2 text-xs sm:text-sm font-medium align-bottom leading-tight whitespace-nowrap"
                       aria-label="Monto neto en dólares y bolívares"
                     >
                       Monto neto
@@ -1674,7 +1752,7 @@ export function LoyverseVentasPorPago({
                   {paymentDays.length === 0 ? (
                     <tr className="border-t border-gray-100">
                       <td
-                        colSpan={8}
+                        colSpan={9}
                         className="min-h-[16rem] px-4 py-14 align-middle text-center text-sm leading-relaxed text-gray-600 bg-gray-50/50"
                       >
                         No hay datos en este rango de fechas. Amplía el período en el
@@ -1714,20 +1792,44 @@ export function LoyverseVentasPorPago({
                             >
                               {day.rateBs != null &&
                               Number.isFinite(day.rateBs) ? (
-                                <span className="text-base sm:text-lg font-semibold tabular-nums text-gray-900">
+                                <span className="text-base sm:text-lg font-semibold tabular-nums text-gray-900 leading-none">
                                   {formatBs(day.rateBs)}
                                 </span>
                               ) : (
-                                <span className="text-gray-400 text-lg">—</span>
+                                <span className="text-gray-400 text-lg leading-none">
+                                  —
+                                </span>
                               )}
                             </td>
                           )}
-                          <td className="px-1.5 py-2 sm:px-2 min-w-0 align-middle text-center">
-                            <div className="flex justify-center">
+                          {idx === 0 && (
+                            <td
+                              rowSpan={Math.max(1, day.methods.length)}
+                              className="px-1.5 py-2 sm:px-2 align-top text-center border-r border-gray-100"
+                            >
+                              <input
+                                type="text"
+                                autoComplete="off"
+                                placeholder=""
+                                maxLength={32}
+                                value={posBatchByDate[day.dateYmd] ?? ""}
+                                onChange={(e) => {
+                                  persistPosBatchByDate(
+                                    day.dateYmd,
+                                    e.target.value
+                                  );
+                                }}
+                                className="w-full min-w-0 rounded-md border border-zm-green/35 bg-white px-2 py-1 text-center text-base font-semibold tabular-nums leading-none text-gray-900 shadow-sm placeholder:text-gray-400 placeholder:font-semibold focus:border-zm-green focus:outline-none focus:ring-1 focus:ring-zm-green/40 sm:text-lg sm:py-1.5"
+                                aria-label={`Número de lote del punto de venta (tarjeta), ${day.dateYmd}`}
+                              />
+                            </td>
+                          )}
+                          <td className="px-1.5 py-2 sm:px-2 min-w-0 align-middle text-left border-r border-gray-100">
+                            <div className="flex min-h-[2.25rem] w-full items-center justify-start pl-0.5 sm:pl-1">
                               <PaymentMethodWithIcon paymentMethod={r.payment_method} />
                             </div>
                           </td>
-                          <td className="px-1 py-2 sm:px-1.5 align-middle">
+                          <td className="px-1.5 py-2 sm:px-2 align-middle text-right">
                             <div className={paymentCountInnerClass}>{r.txns}</div>
                           </td>
                           <UsdDualCell
@@ -1736,7 +1838,7 @@ export function LoyverseVentasPorPago({
                             numericSize="large"
                             tightPad
                           />
-                          <td className="px-1 py-2 sm:px-1.5 align-middle">
+                          <td className="px-1.5 py-2 sm:px-2 align-middle text-right">
                             <div className={paymentCountInnerClass}>
                               {r.reembolsoTxns}
                             </div>
@@ -1759,12 +1861,12 @@ export function LoyverseVentasPorPago({
                       })}
                       <tr className="border-t border-gray-200 bg-zm-cream/70 text-gray-900">
                         <td
-                          colSpan={3}
+                          colSpan={4}
                           className="px-1.5 py-2 sm:px-2 text-center text-sm sm:text-base font-semibold leading-snug text-zm-sidebar"
                         >
                           Subtotal {formatDateShort(day.dateYmd)}
                         </td>
-                        <td className="px-1 py-2 sm:px-1.5 align-middle">
+                        <td className="px-1.5 py-2 sm:px-2 align-middle text-right">
                           <div className={paymentCountInnerClass}>
                             {day.dayTotals.txns}
                           </div>
@@ -1775,7 +1877,7 @@ export function LoyverseVentasPorPago({
                           numericSize="large"
                           tightPad
                         />
-                        <td className="px-1 py-2 sm:px-1.5 align-middle">
+                        <td className="px-1.5 py-2 sm:px-2 align-middle text-right">
                           <div className={paymentCountInnerClass}>
                             {day.dayTotals.reembolsoTxns}
                           </div>
@@ -1799,12 +1901,12 @@ export function LoyverseVentasPorPago({
                   {paymentDays.length > 0 && (
                     <tr className="border-t-2 border-zm-green/25 bg-zm-green/10 text-gray-900">
                       <td
-                        colSpan={3}
+                        colSpan={4}
                         className="px-1.5 py-2.5 sm:px-2 text-center text-sm sm:text-base font-bold text-zm-sidebar"
                       >
                         Total del rango
                       </td>
-                      <td className="px-1 py-2.5 sm:px-1.5 align-middle">
+                      <td className="px-1.5 py-2.5 sm:px-2 align-middle text-right">
                         <div className={paymentCountInnerClass}>{grandTotal.txns}</div>
                       </td>
                       <UsdBsAggregateCell
@@ -1813,7 +1915,7 @@ export function LoyverseVentasPorPago({
                         numericSize="large"
                         tightPad
                       />
-                      <td className="px-1 py-2.5 sm:px-1.5 align-middle">
+                      <td className="px-1.5 py-2.5 sm:px-2 align-middle text-right">
                         <div className={paymentCountInnerClass}>
                           {grandTotal.reembolsoTxns}
                         </div>

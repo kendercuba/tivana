@@ -21,6 +21,7 @@ import AccountSummary from './pages/account/Summary';
 import AccountOrders from './pages/account/Orders';
 import AccountProfile from './pages/account/Profile';
 import FinanceDashboard from './pages/admin/finance/FinanceDashboard.jsx';
+import ZmWeeklyFinancePanel from "./pages/admin/finance/ZmWeeklyFinancePanel.jsx";
 import FinanceBankHub from './pages/admin/finance/FinanceBankHub.jsx';
 import LoyverseImport from './pages/admin/finance/LoyverseImport.jsx';
 import ZonaMarketLayout from './pages/zonamarket/ZonaMarketLayout.jsx';
@@ -184,7 +185,7 @@ function App() {
           path="articles/categories"
           element={<ZonaMarketArticleCategories />}
         />
-        <Route path="finance/dashboard" element={<FinanceDashboard />} />
+        <Route path="finance/dashboard" element={<ZmWeeklyFinancePanel />} />
         <Route path="finance/loyverse" element={<LoyverseImport />} />
         <Route path="finance/:section" element={<FinanceBankHub />} />
       </Route>
