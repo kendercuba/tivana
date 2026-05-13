@@ -43,5 +43,6 @@ jobs:
               --exclude='uploads' \
               --exclude='.git'
             cd /var/www/backend
+            node -e "const m=+process.version.slice(1).split('.')[0]; if(m<20){console.error('ERROR: Node.js 20+ is required on the Droplet. Current:', process.version); console.error('Run: curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs'); process.exit(1)}"
             if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
             pm2 restart tivana-backend

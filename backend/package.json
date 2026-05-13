@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "main": "index.mjs",
+  "engines": {
+    "node": ">=20.18.1"
+  },
   "scripts": {
     "dev": "cross-env NODE_ENV=development nodemon index.mjs",
     "start": "cross-env NODE_ENV=production node index.mjs"
