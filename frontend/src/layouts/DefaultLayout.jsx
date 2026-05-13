@@ -1,11 +1,13 @@
 // src/layouts/DefaultLayout.jsx
 import Header from "../components/Header";
 import Footer from "../components/Footer";
+import StorefrontMaintenanceVeil from "../components/storefront/StorefrontMaintenanceVeil.jsx";
 import { Outlet } from "react-router-dom";
 
 export default function DefaultLayout() {
   return (
     <div className="min-h-screen flex flex-col bg-white overflow-x-hidden border-4 border-amber-500"> {/* ✅ Contenedor raíz */}
+      <StorefrontMaintenanceVeil />
       
       <Header />
 
