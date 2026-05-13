@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Building2,
@@ -8,6 +8,10 @@ import {
   ShoppingBasket,
   Store,
 } from "lucide-react";
+import { useReportingGaps } from "../../hooks/admin/finance/useReportingGaps.js";
+import ZmAdminReportingBellPanel, {
+  ReportingGapNumberBadge,
+} from "./ZmAdminReportingBellPanel.jsx";
 
 const ZM_FINANCE_BASE = "/zonamarket/admin/finance";
 const LOYVERSE_PATH = `${ZM_FINANCE_BASE}/loyverse`;
@@ -179,6 +183,42 @@ export default function ZonaMarketAdminLayout() {
   const isFinanceRoute = location.pathname.startsWith(ZM_FINANCE_BASE);
   const isAdminMenuRoute = isFinanceRoute || isUnderArticles;
 
+  const {
+    yesterdayYmd,
+    loading: gapsLoading,
+    error: gapsError,
+    refresh: refreshGaps,
+    bellAlertCount,
+    loyverseResumenMissing,
+    loyversePagoMissing,
+    bankAccountsWithGaps,
+    bankMenuMaxMissing,
+  } = useReportingGaps();
+
+  const loyverseResumenTo = useMemo(
+    () => `${LOYVERSE_PATH}${loyverseQs("ventas", "resumen")}`,
+    []
+  );
+  const loyversePagoTo = useMemo(
+    () => `${LOYVERSE_PATH}${loyverseQs("ventas", "pago")}`,
+    []
+  );
+
+  const reportingBellSharedProps = {
+    yesterdayYmd,
+    loading: gapsLoading,
+    error: gapsError,
+    onRefresh: refreshGaps,
+    bellAlertCount,
+    loyverseResumenMissing,
+    loyversePagoMissing,
+    bankAccountsWithGaps,
+    bankMenuMaxMissing,
+    loyverseResumenTo,
+    loyversePagoTo,
+    bankCuentasTo: BANK_CUENTAS_SECTION,
+  };
+
   function toggleBanking() {
     setBankingOpen((prev) => !prev);
   }
@@ -199,10 +239,10 @@ export default function ZonaMarketAdminLayout() {
           "lg:static lg:z-0 lg:min-h-screen lg:w-64 lg:shrink-0 lg:self-stretch lg:p-5 lg:space-y-4"
         )}
       >
-        <div className="flex h-14 shrink-0 items-center justify-center border-b border-zm-green/40 px-2 lg:h-auto lg:justify-start lg:border-0 lg:px-0">
+        <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-zm-green/40 px-2 lg:h-auto lg:border-0 lg:px-0">
           <Link
             to="/zonamarket/admin"
-            className="flex flex-col items-center justify-center gap-1 rounded-lg p-1 font-bold text-white hover:opacity-95 lg:p-0"
+            className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg p-1 font-bold text-white hover:opacity-95 lg:flex-row lg:items-center lg:justify-start lg:p-0"
             title="Zona Market Admin"
           >
             <span className="flex h-9 w-9 flex-col overflow-hidden rounded-lg shadow-md ring-1 ring-white/25 lg:hidden">
@@ -222,6 +262,9 @@ export default function ZonaMarketAdminLayout() {
               decoding="async"
             />
           </Link>
+          <div className="hidden shrink-0 lg:block">
+            <ZmAdminReportingBellPanel {...reportingBellSharedProps} variant="sidebar" />
+          </div>
         </div>
 
         <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2 lg:gap-2 lg:overflow-visible lg:p-0">
@@ -356,8 +399,14 @@ export default function ZonaMarketAdminLayout() {
                     className="mt-1 ml-2 flex flex-col gap-0.5 border-l border-zm-yellow/35 pl-3"
                   >
                     <li>
-                      <NavLink to={BANK_CUENTAS_SECTION} className={financeNavClass}>
-                        Cuentas
+                      <NavLink
+                        to={BANK_CUENTAS_SECTION}
+                        className={(p) =>
+                          cn(financeNavClass(p), "flex items-center justify-between gap-2")
+                        }
+                      >
+                        <span>Cuentas</span>
+                        <ReportingGapNumberBadge value={bankMenuMaxMissing} />
                       </NavLink>
                     </li>
                   </ul>
@@ -421,26 +470,34 @@ export default function ZonaMarketAdminLayout() {
                         >
                           <li>
                             <Link
-                              to={`${LOYVERSE_PATH}${loyverseQs("ventas", "resumen")}`}
-                              className={loyverseItemClass(
-                                onLoyverseRoute &&
-                                  lvTab === "ventas" &&
-                                  lvVentasSub === "resumen"
+                              to={loyverseResumenTo}
+                              className={cn(
+                                loyverseItemClass(
+                                  onLoyverseRoute &&
+                                    lvTab === "ventas" &&
+                                    lvVentasSub === "resumen"
+                                ),
+                                "flex items-center justify-between gap-2"
                               )}
                             >
-                              Resumen de ventas
+                              <span className="min-w-0">Resumen de ventas</span>
+                              <ReportingGapNumberBadge value={loyverseResumenMissing} />
                             </Link>
                           </li>
                           <li>
                             <Link
-                              to={`${LOYVERSE_PATH}${loyverseQs("ventas", "pago")}`}
-                              className={loyverseItemClass(
-                                onLoyverseRoute &&
-                                  lvTab === "ventas" &&
-                                  lvVentasSub === "pago"
+                              to={loyversePagoTo}
+                              className={cn(
+                                loyverseItemClass(
+                                  onLoyverseRoute &&
+                                    lvTab === "ventas" &&
+                                    lvVentasSub === "pago"
+                                ),
+                                "flex items-center justify-between gap-2"
                               )}
                             >
-                              Ventas por tipo de pago
+                              <span className="min-w-0">Ventas por tipo de pago</span>
+                              <ReportingGapNumberBadge value={loyversePagoMissing} />
                             </Link>
                           </li>
                           <li>
@@ -574,10 +631,13 @@ export default function ZonaMarketAdminLayout() {
               </p>
               <NavLink
                 to={BANK_CUENTAS_SECTION}
-                className={(p) => cn(financeNavClass(p), "ml-3")}
+                className={(p) =>
+                  cn(financeNavClass(p), "ml-3 flex items-center justify-between gap-2")
+                }
                 onClick={() => setFinanceFlyoutOpen(false)}
               >
-                Cuentas
+                <span>Cuentas</span>
+                <ReportingGapNumberBadge value={bankMenuMaxMissing} />
               </NavLink>
 
               <p className="mt-3 px-2 text-xs font-bold uppercase tracking-wider text-violet-200">
@@ -587,32 +647,34 @@ export default function ZonaMarketAdminLayout() {
                 Ventas
               </p>
               <Link
-                to={`${LOYVERSE_PATH}${loyverseQs("ventas", "resumen")}`}
+                to={loyverseResumenTo}
                 className={cn(
                   loyverseItemClass(
                     onLoyverseRoute &&
                       lvTab === "ventas" &&
                       lvVentasSub === "resumen"
                   ),
-                  "ml-3 block"
+                  "ml-3 flex items-center justify-between gap-2"
                 )}
                 onClick={() => setFinanceFlyoutOpen(false)}
               >
-                Resumen de ventas
+                <span className="min-w-0">Resumen de ventas</span>
+                <ReportingGapNumberBadge value={loyverseResumenMissing} />
               </Link>
               <Link
-                to={`${LOYVERSE_PATH}${loyverseQs("ventas", "pago")}`}
+                to={loyversePagoTo}
                 className={cn(
                   loyverseItemClass(
                     onLoyverseRoute &&
                       lvTab === "ventas" &&
                       lvVentasSub === "pago"
                   ),
-                  "ml-3 block"
+                  "ml-3 flex items-center justify-between gap-2"
                 )}
                 onClick={() => setFinanceFlyoutOpen(false)}
               >
-                Ventas por tipo de pago
+                <span className="min-w-0">Ventas por tipo de pago</span>
+                <ReportingGapNumberBadge value={loyversePagoMissing} />
               </Link>
               <Link
                 to={`${LOYVERSE_PATH}${loyverseQs("ventas", "articulos")}`}
@@ -649,10 +711,15 @@ export default function ZonaMarketAdminLayout() {
       )}
 
       <div className="flex min-h-screen min-w-0 flex-1 flex-col pl-[3.75rem] lg:pl-0">
-        <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center border-b border-zm-yellow/40 bg-white/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-white/85 lg:hidden">
+        <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center justify-between gap-2 border-b border-zm-yellow/40 bg-white/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-white/85 lg:hidden">
           <span className="truncate text-sm font-bold text-zm-sidebar">
             Zona Market
           </span>
+          <ZmAdminReportingBellPanel
+            {...reportingBellSharedProps}
+            variant="light"
+            compact
+          />
         </header>
 
         <main className="flex-1 bg-zm-cream px-3 py-4 sm:px-5 md:px-6 lg:px-8 lg:pt-4 lg:pb-8">
