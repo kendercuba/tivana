@@ -13,6 +13,7 @@
 #   · ./  → raíz de la sesión FTP (Hostinger: evita public_html/public_html anidada si ya estás en el sitio).
 # Opcional: VITE_API_URL (URL del backend sin /api final).
 # https://www.hostinger.com/support/4480505-how-to-connect-to-your-hosting-using-ftp-in-hostinger/
+# Redeploy manual: GitHub → Actions → este workflow → "Run workflow".
 
 name: Deploy Frontend to Hostinger
 
