@@ -50,6 +50,70 @@ function formatWeekRangeLabel(weekStartFriday, weekEndThursday) {
   return `${fmt.format(a)} – ${fmt.format(b)} ${a.getFullYear()}`;
 }
 
+function cn(...parts) {
+  return parts.filter(Boolean).join(" ");
+}
+
+/** Monto USD en columna derecha; si es deducción, entre paréntesis (estilo estado de resultados). */
+function StatementUsdAmount({ value, isDeduction }) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) {
+    return <span className="tabular-nums text-gray-400">—</span>;
+  }
+  const t = formatUsd(Math.abs(n));
+  if (isDeduction) {
+    return <span className="tabular-nums text-zm-sidebar">({t})</span>;
+  }
+  return <span className="tabular-nums font-semibold text-zm-sidebar">{t}</span>;
+}
+
+/** Monto Bs; deducciones entre paréntesis. */
+function StatementBsAmount({ value, isDeduction }) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) {
+    return <span className="tabular-nums text-gray-400">—</span>;
+  }
+  const core = formatBs(Math.abs(n));
+  const inner = `Bs.\u00A0${core}`;
+  if (isDeduction) {
+    return <span className="tabular-nums font-semibold text-orange-600">({inner})</span>;
+  }
+  return <span className="tabular-nums font-semibold text-orange-600">{inner}</span>;
+}
+
+function StatementDualLine({ usd, bs, isDeduction }) {
+  return (
+    <div className="flex flex-col items-end gap-0.5 text-sm leading-tight sm:text-base">
+      <StatementUsdAmount value={usd} isDeduction={isDeduction} />
+      <StatementBsAmount value={bs} isDeduction={isDeduction} />
+    </div>
+  );
+}
+
+function StatementBsOnlyLine({ value, isDeduction }) {
+  return (
+    <div className="flex flex-col items-end gap-0.5 text-sm leading-tight sm:text-base">
+      <span className="tabular-nums text-xs text-gray-400 sm:text-sm">—</span>
+      <StatementBsAmount value={value} isDeduction={isDeduction} />
+    </div>
+  );
+}
+
+function StatementLeaderRow({ label, children }) {
+  return (
+    <div className="flex min-h-[2.5rem] items-end gap-2">
+      <span className="min-w-0 max-w-[58%] shrink text-left text-sm font-medium leading-snug text-gray-900 sm:max-w-[65%] sm:text-base">
+        {label}
+      </span>
+      <span
+        className="mb-1.5 h-px min-w-[0.75rem] flex-1 border-b border-dotted border-gray-300"
+        aria-hidden
+      />
+      <div className="shrink-0 text-right">{children}</div>
+    </div>
+  );
+}
+
 /**
  * Resumen semanal Zona Market (corte viernes → jueves): ventas Loyverse, órdenes de compra, banco.
  */
@@ -62,6 +126,7 @@ export default function ZmWeeklyFinancePanel() {
   const [error, setError] = useState(null);
   const [bankAccounts, setBankAccounts] = useState([]);
   const [bankAccountId, setBankAccountId] = useState("");
+  const [viewMode, setViewMode] = useState("cards");
 
   const bootstrapWeek = useCallback(async () => {
     const res = await fetchZmWeeklyWeekBounds();
@@ -131,6 +196,14 @@ export default function ZmWeeklyFinancePanel() {
 
   const flow = overview ? Number(overview.indicative_flow_bs) : NaN;
   const flowPositive = Number.isFinite(flow) && flow >= 0;
+
+  const usdApproxNet = useMemo(() => {
+    if (!overview) return NaN;
+    return (
+      Number(overview.sales_usd_total || 0) -
+      Number(overview.purchase_orders_usd_total || 0)
+    );
+  }, [overview]);
 
   /** Tarjeta con USD arriba y Bs debajo (mismo recuadro); solo montos, sin micro-etiquetas. */
   function kpiCardDualCurrency({ title, usd, bs }) {
@@ -226,6 +299,33 @@ export default function ZmWeeklyFinancePanel() {
         </div>
       </div>
 
+      <div className="mt-3 flex flex-wrap gap-1 border-b border-zm-green/15 pb-3">
+        <button
+          type="button"
+          onClick={() => setViewMode("cards")}
+          className={cn(
+            "px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors",
+            viewMode === "cards"
+              ? "bg-zm-cream/70 border-zm-green/45 text-zm-sidebar shadow-sm"
+              : "bg-transparent border-transparent text-gray-600 hover:text-zm-sidebar hover:bg-zm-cream/40"
+          )}
+        >
+          Vista tarjetas
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode("statement")}
+          className={cn(
+            "px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors",
+            viewMode === "statement"
+              ? "bg-zm-cream/70 border-zm-green/45 text-zm-sidebar shadow-sm"
+              : "bg-transparent border-transparent text-gray-600 hover:text-zm-sidebar hover:bg-zm-cream/40"
+          )}
+        >
+          Estado de resultados
+        </button>
+      </div>
+
       {error && (
         <p className="mt-4 text-sm text-zm-red" role="alert">
           {error}
@@ -237,6 +337,8 @@ export default function ZmWeeklyFinancePanel() {
 
       {!loading && overview && (
         <>
+          {viewMode === "cards" && (
+            <>
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {kpiCardDualCurrency({
               title: "Ventas",
@@ -284,6 +386,77 @@ export default function ZmWeeklyFinancePanel() {
               solaparse órdenes con movimientos bancarios si registrás lo mismo dos veces.
             </p>
           </div>
+            </>
+          )}
+
+          {viewMode === "statement" && (
+            <section className="mt-6 max-w-2xl rounded-xl border border-zm-green/20 bg-white p-4 shadow-sm sm:p-6">
+              <h2 className="border-b border-zm-green/25 pb-2 text-center text-sm font-bold uppercase tracking-wide text-zm-sidebar sm:text-base">
+                Estado de resultados
+              </h2>
+              <p className="mt-1 text-center text-sm text-gray-600">{weekLabel}</p>
+
+              <div className="mt-6 space-y-3">
+                <StatementLeaderRow label="Ventas netas">
+                  <StatementDualLine
+                    usd={overview.sales_usd_total}
+                    bs={overview.sales_bs_estimated}
+                    isDeduction={false}
+                  />
+                </StatementLeaderRow>
+                <StatementLeaderRow label="Menos: órdenes de compra (mercancía)">
+                  <StatementDualLine
+                    usd={overview.purchase_orders_usd_total}
+                    bs={overview.purchase_orders_bs_estimated}
+                    isDeduction
+                  />
+                </StatementLeaderRow>
+                <StatementLeaderRow label="Menos: nómina (banco)">
+                  <StatementBsOnlyLine
+                    value={overview.bank_nomina_debit_bs}
+                    isDeduction
+                  />
+                </StatementLeaderRow>
+                <StatementLeaderRow label="Menos: comisiones bancarias">
+                  <StatementBsOnlyLine
+                    value={overview.bank_comision_debit_bs}
+                    isDeduction
+                  />
+                </StatementLeaderRow>
+                <StatementLeaderRow label="Menos: compra inventario (banco)">
+                  <StatementBsOnlyLine
+                    value={overview.bank_compra_inventario_debit_bs}
+                    isDeduction
+                  />
+                </StatementLeaderRow>
+              </div>
+
+              <div
+                className={cn(
+                  "mt-6 rounded-xl border-2 px-4 py-4 sm:px-5 sm:py-5",
+                  flowPositive
+                    ? "border-zm-green/45 bg-zm-green/10"
+                    : "border-zm-red/40 bg-zm-red/5"
+                )}
+              >
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                  Ganancia neta indicativa
+                </p>
+                <p
+                  className={cn(
+                    "mt-2 text-2xl font-bold tabular-nums sm:text-3xl",
+                    flowPositive ? "text-zm-sidebar" : "text-zm-red"
+                  )}
+                >
+                  {formatBsWithSymbol(overview.indicative_flow_bs)}
+                </p>
+                <p className="mt-2 text-sm font-semibold tabular-nums text-zm-sidebar">
+                  {Number.isFinite(usdApproxNet) ? formatUsd(usdApproxNet) : "—"}{" "}
+                  <span className="text-xs font-normal text-gray-500">(USD aprox.: ventas − órdenes)</span>
+                </p>
+              </div>
+            </section>
+          )}
 
           <div className="mt-8 flex flex-wrap gap-3 text-sm">
             <Link

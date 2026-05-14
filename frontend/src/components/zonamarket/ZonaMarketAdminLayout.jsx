@@ -7,6 +7,7 @@ import {
   PieChart,
   ShoppingBasket,
   Store,
+  Wallet,
 } from "lucide-react";
 import { useReportingGaps } from "../../hooks/admin/finance/useReportingGaps.js";
 import ZmAdminReportingBellPanel, {
@@ -14,6 +15,7 @@ import ZmAdminReportingBellPanel, {
 } from "./ZmAdminReportingBellPanel.jsx";
 
 const ZM_FINANCE_BASE = "/zonamarket/admin/finance";
+const ZM_GASTOS_PATH = `${ZM_FINANCE_BASE}/gastos`;
 const LOYVERSE_PATH = `${ZM_FINANCE_BASE}/loyverse`;
 const ZM_ARTICLES_BASE = "/zonamarket/admin/articles";
 const ARTICLES_LIST_PATH = `${ZM_ARTICLES_BASE}/list`;
@@ -369,6 +371,20 @@ export default function ZonaMarketAdminLayout() {
                 <span className="drop-shadow-sm">Resumen semanal</span>
               </NavLink>
 
+              <NavLink to={ZM_GASTOS_PATH} className={financePanelNavClass}>
+                <span
+                  className="inline-block w-4 shrink-0 text-center text-[10px] text-transparent select-none"
+                  aria-hidden
+                >
+                  ▸
+                </span>
+                <Wallet
+                  className={cn(NAV_ICON_LG, "text-emerald-300")}
+                  aria-hidden
+                />
+                <span className="drop-shadow-sm">Gastos</span>
+              </NavLink>
+
               <div className="mt-1">
                 <button
                   type="button"
@@ -624,6 +640,24 @@ export default function ZonaMarketAdminLayout() {
                   aria-hidden
                 />
                 <span className="drop-shadow-sm">Resumen semanal</span>
+              </NavLink>
+
+              <NavLink
+                to={ZM_GASTOS_PATH}
+                className={(p) => cn(financePanelNavClass(p), "mt-1")}
+                onClick={() => setFinanceFlyoutOpen(false)}
+              >
+                <span
+                  className="inline-block w-4 shrink-0 text-center text-[10px] text-transparent select-none"
+                  aria-hidden
+                >
+                  ▸
+                </span>
+                <Wallet
+                  className={cn(NAV_ICON_LG, "text-emerald-300")}
+                  aria-hidden
+                />
+                <span className="drop-shadow-sm">Gastos</span>
               </NavLink>
 
               <p className="mt-3 px-2 text-xs font-bold uppercase tracking-wider text-amber-200">

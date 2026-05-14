@@ -11,6 +11,7 @@ import {
   Store,
   Upload,
   Users,
+  Wallet,
 } from "lucide-react";
 
 function financeNavClass({ isActive }) {
@@ -153,6 +154,14 @@ export default function AdminLayout({ children }) {
                 Panel finanzas
               </NavLink>
 
+              <NavLink
+                to="/admin/finance/gastos"
+                className={cn(financeNavClass, "flex items-center gap-2")}
+              >
+                <Wallet className="h-4 w-4 shrink-0 opacity-80" />
+                Gastos
+              </NavLink>
+
               <div className="mt-1">
                 <button
                   type="button"
@@ -235,6 +244,15 @@ export default function AdminLayout({ children }) {
                 onClick={() => setFinanceFlyoutOpen(false)}
               >
                 Panel finanzas
+              </NavLink>
+
+              <NavLink
+                to="/admin/finance/gastos"
+                className={cn(financeNavClass, "flex items-center gap-2")}
+                onClick={() => setFinanceFlyoutOpen(false)}
+              >
+                <Wallet className="h-4 w-4 shrink-0" />
+                Gastos
               </NavLink>
 
               <p className="mt-3 px-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
