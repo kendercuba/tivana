@@ -383,3 +383,57 @@ export async function getLoyverseBankReconciliationSnapshot({
     match,
   };
 }
+
+function addDaysYmdLocal(ymd, deltaDays) {
+  const s = String(ymd || "").slice(0, 10);
+  const [y, mo, d] = s.split("-").map(Number);
+  if (!y || !mo || !d) return s;
+  const dt = new Date(y, mo - 1, d + deltaDays);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+/**
+ * Match status (Loyverse PM vs banco) for each calendar day in a range.
+ * @param {{ startYmd: string, endYmd: string, bankAccountId: number|string, paymentMethod?: string }} p
+ * @returns {Promise<Record<string, string>>} date -> match.status
+ */
+export async function getLoyverseBankMatchStatusesInRange({
+  startYmd,
+  endYmd,
+  bankAccountId,
+  paymentMethod = "pago_movil",
+} = {}) {
+  const lo = String(startYmd || "").slice(0, 10);
+  const hi = String(endYmd || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(lo) || !/^\d{4}-\d{2}-\d{2}$/.test(hi)) {
+    throw new Error("Rango de fechas inválido.");
+  }
+  const rangeLo = lo <= hi ? lo : hi;
+  const rangeHi = lo <= hi ? hi : lo;
+  let span = 0;
+  for (let probe = rangeLo; probe <= rangeHi; probe = addDaysYmdLocal(probe, 1)) {
+    span += 1;
+    if (span > 120) {
+      throw new Error("Rango máximo 120 días para cotejo masivo.");
+    }
+  }
+  const bid = Number(bankAccountId);
+  if (!Number.isFinite(bid) || bid <= 0) {
+    throw new Error("Cuenta bancaria obligatoria.");
+  }
+  const pm = clampPaymentMethod(paymentMethod);
+  const out = {};
+  for (let d = rangeLo; d <= rangeHi; d = addDaysYmdLocal(d, 1)) {
+    const snap = await getLoyverseBankReconciliationSnapshot({
+      businessDate: d,
+      bankAccountId: bid,
+      paymentMethod: pm,
+      posBatch: "",
+    });
+    out[d] = String(snap?.match?.status || "revisar");
+  }
+  return out;
+}

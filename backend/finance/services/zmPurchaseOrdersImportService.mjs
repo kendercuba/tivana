@@ -273,7 +273,13 @@ export async function listZmPurchaseOrderLinesByBatchId(
       l.source_file,
       l.raw_row,
       l.created_at,
-      art.sold_by_weight AS article_sold_by_weight
+      art.sold_by_weight AS article_sold_by_weight,
+      EXISTS (
+        SELECT 1
+        FROM finance_reconciliation_links r
+        WHERE r.zm_po_line_id = l.id
+          AND r.workspace = 'zm_purchase'
+      ) AS po_bank_reconciled
     FROM finance_zm_purchase_order_lines l
     LEFT JOIN LATERAL (
       SELECT z.sold_by_weight
@@ -346,7 +352,13 @@ export async function listZmPurchaseOrderLinesInDateRange({
       l.source_file,
       l.raw_row,
       l.created_at,
-      art.sold_by_weight AS article_sold_by_weight
+      art.sold_by_weight AS article_sold_by_weight,
+      EXISTS (
+        SELECT 1
+        FROM finance_reconciliation_links r
+        WHERE r.zm_po_line_id = l.id
+          AND r.workspace = 'zm_purchase'
+      ) AS po_bank_reconciled
     FROM finance_zm_purchase_order_lines l
     INNER JOIN finance_import_batches b
       ON b.id = l.import_batch_id AND b.import_type = 'zm_purchase_orders'

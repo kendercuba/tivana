@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Upload } from "lucide-react";
+import { Upload, Check } from "lucide-react";
 import {
   fetchZmPurchaseOrderLinesInRange,
   fetchZmPurchaseOrderMeta,
@@ -354,6 +354,9 @@ export default function ZmPurchaseOrders({
                 <table className="min-w-[940px] w-full text-sm border-collapse">
                   <thead className="sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream">
                     <tr>
+                      <th className="w-10 text-center px-2 py-2 whitespace-nowrap" title="Conciliado con banco (OC)">
+                        ✓
+                      </th>
                       <th className="text-left px-3 py-2 whitespace-nowrap">Fecha</th>
                       <th className="text-left px-3 py-2 whitespace-nowrap">Orden</th>
                       <th className="text-right px-3 py-2 whitespace-nowrap">Lote</th>
@@ -382,15 +385,34 @@ export default function ZmPurchaseOrders({
                       const isHi =
                         hasHighlight &&
                         Number(r.import_batch_id) === highlightNum;
+                      const isPoBankReconciled = Boolean(
+                        r.po_bank_reconciled ?? r.poBankReconciled
+                      );
                       return (
                         <tr
                           key={r.id}
                           className={`border-t border-gray-100 ${
                             isHi
                               ? "border-zm-green/10 bg-zm-yellow/30 hover:bg-zm-yellow/40"
-                              : "hover:bg-gray-50"
+                              : isPoBankReconciled
+                                ? "border-l-4 border-zm-green bg-emerald-50/50 hover:bg-emerald-50/70"
+                                : "hover:bg-gray-50"
                           }`}
                         >
+                          <td className="px-2 py-2 text-center align-middle">
+                            {isPoBankReconciled ? (
+                              <span
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-zm-green/15 text-zm-green"
+                                title="Conciliado con movimiento bancario"
+                              >
+                                <Check className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
+                              </span>
+                            ) : (
+                              <span className="text-gray-300" aria-hidden>
+                                ·
+                              </span>
+                            )}
+                          </td>
                           <td className="px-3 py-2 whitespace-nowrap tabular-nums text-gray-900">
                             {formatDateLikeExcel(r.business_date)}
                           </td>
@@ -430,7 +452,7 @@ export default function ZmPurchaseOrders({
                     })}
                     <tr className="border-t border-zm-green/25 bg-zm-green/10">
                       <td
-                        colSpan={8}
+                        colSpan={9}
                         className="px-3 py-2 text-right text-sm font-semibold text-zm-sidebar"
                       >
                         Total período (USD)

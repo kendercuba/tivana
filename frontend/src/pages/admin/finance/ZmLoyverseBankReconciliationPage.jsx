@@ -9,7 +9,7 @@ import {
   deletePurchaseReconciliationLink,
   fetchPurchaseReconciliationDay,
   fetchPurchaseReconciliationSummary,
-  postPurchaseReconciliationLink,
+  postPurchaseReconciliationLinksBatch,
 } from "../../../api/admin/finance/reconciliationApi.js";
 
 /** Misma clave que en LoyverseVentasTablas (lote POS por día). */
@@ -37,6 +37,53 @@ const RECON_MODES = {
   ventas: "ventas",
   compras: "compras",
 };
+
+/** Matches `finance_categories` seed used for OC reconciliation. */
+const PURCHASE_INVENTORY_CATEGORY = "Compra inventario";
+
+const PURCHASE_BANK_DEBIT_VIEWS = {
+  all: "all",
+  hidePmFee751: "hide_pm_fee_751",
+};
+
+const PM_PURCHASE_TX_CODE = "487";
+const PM_COMMISSION_TX_CODE = "751";
+
+function normalizePurchaseBankDescription(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+/**
+ * Hides BNC-style PM commission rows (751) when the same day list includes
+ * a paired purchase debit (487) with the same normalized description.
+ */
+function filterPurchaseBankHidePairedPmCommission751(movements) {
+  const codesByDesc = new Map();
+  for (const m of movements) {
+    const desc = normalizePurchaseBankDescription(m.description);
+    const code = String(m.transaction_code ?? "").trim();
+    if (!codesByDesc.has(desc)) codesByDesc.set(desc, new Set());
+    codesByDesc.get(desc).add(code);
+  }
+  return movements.filter((m) => {
+    const code = String(m.transaction_code ?? "").trim();
+    if (code !== PM_COMMISSION_TX_CODE) return true;
+    const desc = normalizePurchaseBankDescription(m.description);
+    const set = codesByDesc.get(desc);
+    return !set || !set.has(PM_PURCHASE_TX_CODE);
+  });
+}
+
+function matchesSubstringFilter(haystack, needle) {
+  const n = String(needle || "").trim().toLowerCase();
+  if (!n) return true;
+  return String(haystack ?? "")
+    .toLowerCase()
+    .includes(n);
+}
 
 function localTodayYmd() {
   const t = new Date();
@@ -133,9 +180,23 @@ export default function ZmLoyverseBankReconciliationPage() {
   const [purchaseDay, setPurchaseDay] = useState(null);
   const [purchaseLoading, setPurchaseLoading] = useState(false);
   const [purchaseError, setPurchaseError] = useState(null);
-  const [selectedPoLineId, setSelectedPoLineId] = useState(null);
+  const [selectedPoLineIds, setSelectedPoLineIds] = useState([]);
+  const [selectedBankMovementIds, setSelectedBankMovementIds] = useState([]);
   const [includeReconciledPurchases, setIncludeReconciledPurchases] = useState(false);
+  const [purchaseBankDebitView, setPurchaseBankDebitView] = useState(
+    PURCHASE_BANK_DEBIT_VIEWS.all
+  );
   const [linkBusyId, setLinkBusyId] = useState(null);
+  const [reconcileSelectionBusy, setReconcileSelectionBusy] = useState(false);
+  const [poFilterOc, setPoFilterOc] = useState("");
+  const [poFilterItem, setPoFilterItem] = useState("");
+  const [purchaseBankFilterCategory, setPurchaseBankFilterCategory] = useState("");
+  const [purchaseBankFilterCode, setPurchaseBankFilterCode] = useState("");
+  const [purchaseBankFilterRef, setPurchaseBankFilterRef] = useState("");
+  const [purchaseBankFilterDesc, setPurchaseBankFilterDesc] = useState("");
+  const [purchaseBankFilterAccount, setPurchaseBankFilterAccount] = useState("");
+  const [purchaseBankFilterTxnType, setPurchaseBankFilterTxnType] = useState("");
+  const [purchaseBankFilterOpType, setPurchaseBankFilterOpType] = useState("");
 
   const loyversePagoLink = useMemo(
     () => `${financeBase}/loyverse?tab=ventas&ventasSub=pago`,
@@ -315,7 +376,8 @@ export default function ZmLoyverseBankReconciliationPage() {
         });
         if (!cancelled) {
           setPurchaseDay(data);
-          setSelectedPoLineId(null);
+          setSelectedPoLineIds([]);
+          setSelectedBankMovementIds([]);
         }
       } catch (e) {
         if (!cancelled) {
@@ -352,24 +414,171 @@ export default function ZmLoyverseBankReconciliationPage() {
     return rows.filter((r) => !r.reconciled);
   }, [purchaseDay?.po_lines, includeReconciledPurchases]);
 
-  async function onBankRowClickPurchase(m) {
-    if (!selectedPoLineId || m.reconciled) return;
-    setLinkBusyId(m.id);
+  const poLinesForTable = useMemo(() => {
+    return poLinesFiltered.filter(
+      (r) =>
+        matchesSubstringFilter(r.po_number, poFilterOc) &&
+        matchesSubstringFilter(r.item_name, poFilterItem)
+    );
+  }, [poLinesFiltered, poFilterOc, poFilterItem]);
+
+  const purchaseBankMovementsDisplayed = useMemo(() => {
+    const raw = purchaseDay?.bank_movements || [];
+    if (purchaseBankDebitView === PURCHASE_BANK_DEBIT_VIEWS.hidePmFee751) {
+      return filterPurchaseBankHidePairedPmCommission751(raw);
+    }
+    return raw;
+  }, [purchaseDay?.bank_movements, purchaseBankDebitView]);
+
+  const purchaseBankCategoryOptions = useMemo(() => {
+    const set = new Set(
+      (purchaseDay?.bank_movements || [])
+        .map((m) => String(m.category || "").trim())
+        .filter(Boolean)
+    );
+    return [...set].sort((a, b) => a.localeCompare(b, "es"));
+  }, [purchaseDay?.bank_movements]);
+
+  const purchaseBankRowsFinal = useMemo(() => {
+    return purchaseBankMovementsDisplayed.filter((m) => {
+      if (
+        purchaseBankFilterCategory &&
+        String(m.category || "").trim() !== purchaseBankFilterCategory
+      ) {
+        return false;
+      }
+      if (!matchesSubstringFilter(m.transaction_code, purchaseBankFilterCode)) {
+        return false;
+      }
+      if (!matchesSubstringFilter(m.reference, purchaseBankFilterRef)) {
+        return false;
+      }
+      if (!matchesSubstringFilter(m.description, purchaseBankFilterDesc)) {
+        return false;
+      }
+      if (!matchesSubstringFilter(m.bank_account_name, purchaseBankFilterAccount)) {
+        return false;
+      }
+      if (!matchesSubstringFilter(m.transaction_type, purchaseBankFilterTxnType)) {
+        return false;
+      }
+      if (!matchesSubstringFilter(m.operation_type, purchaseBankFilterOpType)) {
+        return false;
+      }
+      return true;
+    });
+  }, [
+    purchaseBankMovementsDisplayed,
+    purchaseBankFilterAccount,
+    purchaseBankFilterCategory,
+    purchaseBankFilterCode,
+    purchaseBankFilterDesc,
+    purchaseBankFilterOpType,
+    purchaseBankFilterRef,
+    purchaseBankFilterTxnType,
+  ]);
+
+  const purchaseBankColFiltersActive = useMemo(() => {
+    return (
+      Boolean(String(purchaseBankFilterCategory || "").trim()) ||
+      Boolean(String(purchaseBankFilterCode || "").trim()) ||
+      Boolean(String(purchaseBankFilterRef || "").trim()) ||
+      Boolean(String(purchaseBankFilterDesc || "").trim()) ||
+      Boolean(String(purchaseBankFilterAccount || "").trim()) ||
+      Boolean(String(purchaseBankFilterTxnType || "").trim()) ||
+      Boolean(String(purchaseBankFilterOpType || "").trim())
+    );
+  }, [
+    purchaseBankFilterAccount,
+    purchaseBankFilterCategory,
+    purchaseBankFilterCode,
+    purchaseBankFilterDesc,
+    purchaseBankFilterOpType,
+    purchaseBankFilterRef,
+    purchaseBankFilterTxnType,
+  ]);
+
+  function clearPurchaseBankColumnFilters() {
+    setPurchaseBankFilterCategory("");
+    setPurchaseBankFilterCode("");
+    setPurchaseBankFilterRef("");
+    setPurchaseBankFilterDesc("");
+    setPurchaseBankFilterAccount("");
+    setPurchaseBankFilterTxnType("");
+    setPurchaseBankFilterOpType("");
+  }
+
+  function toggleSelectedPoLine(id, reconciled) {
+    if (reconciled) return;
+    setSelectedPoLineIds((prev) => {
+      const i = prev.indexOf(id);
+      if (i >= 0) return prev.filter((x) => x !== id);
+      return [...prev, id];
+    });
+  }
+
+  function toggleSelectedBankMovement(id, reconciled) {
+    if (reconciled) return;
+    setSelectedBankMovementIds((prev) => {
+      const i = prev.indexOf(id);
+      if (i >= 0) return prev.filter((x) => x !== id);
+      return [...prev, id];
+    });
+  }
+
+  async function runReconcileSelection() {
+    if (selectedPoLineIds.length === 0 || selectedBankMovementIds.length === 0) {
+      setPurchaseError("Seleccioná líneas de orden de compra y movimientos del banco.");
+      return;
+    }
+    if (selectedPoLineIds.length !== selectedBankMovementIds.length) {
+      setPurchaseError(
+        `La cantidad debe coincidir: ${selectedPoLineIds.length} línea(s) OC y ${selectedBankMovementIds.length} movimiento(s) banco.`
+      );
+      return;
+    }
+    const poById = new Map((purchaseDay?.po_lines || []).map((r) => [r.id, r]));
+    const bankById = new Map((purchaseDay?.bank_movements || []).map((m) => [m.id, m]));
+    const pairs = selectedPoLineIds.map((zmPoLineId, idx) => ({
+      zmPoLineId,
+      bankMovementId: selectedBankMovementIds[idx],
+    }));
+    for (const p of pairs) {
+      const row = poById.get(p.zmPoLineId);
+      const bm = bankById.get(p.bankMovementId);
+      if (!row || !bm) {
+        setPurchaseError("Selección inválida (datos desactualizados). Recargá la vista.");
+        return;
+      }
+      if (row.reconciled || bm.reconciled) {
+        setPurchaseError("No podés conciliar filas ya conciliadas.");
+        return;
+      }
+    }
+    const needsCategoryChange = pairs.some((p) => {
+      const bm = bankById.get(p.bankMovementId);
+      return bm && String(bm.category || "").trim() !== PURCHASE_INVENTORY_CATEGORY;
+    });
+    if (needsCategoryChange) {
+      const ok = window.confirm(
+        "Uno o más movimientos del banco no están en «Compra inventario». Al aceptar, la categoría pasará a «Compra inventario» para cada vínculo. ¿Continuar?"
+      );
+      if (!ok) return;
+    }
+    setReconcileSelectionBusy(true);
     setPurchaseError(null);
     try {
-      await postPurchaseReconciliationLink({
-        bankMovementId: m.id,
-        zmPoLineId: selectedPoLineId,
-      });
+      await postPurchaseReconciliationLinksBatch({ pairs });
       const data = await fetchPurchaseReconciliationDay(dateYmd, {
         includeReconciled: includeReconciledPurchases,
       });
       setPurchaseDay(data);
-      setSelectedPoLineId(null);
+      setSelectedPoLineIds([]);
+      setSelectedBankMovementIds([]);
     } catch (e) {
-      setPurchaseError(e.message || "No se pudo vincular.");
+      setPurchaseError(e.message || "No se pudieron guardar los vínculos.");
     } finally {
-      setLinkBusyId(null);
+      setReconcileSelectionBusy(false);
     }
   }
 
@@ -403,34 +612,36 @@ export default function ZmLoyverseBankReconciliationPage() {
   return (
     <div className="w-full font-zm px-4 pb-10 pt-3 sm:px-6">
       <div className="w-full max-w-[1600px] space-y-4">
-        <div className="flex w-full flex-wrap items-center justify-between gap-2 rounded-b-xl bg-zm-green px-4 py-3 text-white shadow-sm sm:px-6">
-          <h1 className="text-sm font-semibold tracking-tight sm:text-base">
-            Conciliación Loyverse ↔ banco
-          </h1>
-          <div className="flex shrink-0 items-center gap-2">
-            <Link
-              to={loyversePagoLink}
-              className="rounded-md px-2 py-1 text-[11px] font-semibold text-white/95 hover:bg-white/15 focus-visible:outline focus-visible:ring-2 focus-visible:ring-white/50"
-              title="Ir a ventas por tipo de pago"
-            >
-              Loyverse
-            </Link>
-            <Link
-              to={loyverseComprasLink}
-              className="rounded-md px-2 py-1 text-[11px] font-semibold text-white/95 hover:bg-white/15 focus-visible:outline focus-visible:ring-2 focus-visible:ring-white/50"
-              title="Ir a órdenes de compra"
-            >
-              Compras
-            </Link>
-            <Link
-              to={bankHubLink}
-              className="rounded-md px-2 py-1 text-[11px] font-semibold text-white/95 hover:bg-white/15 focus-visible:outline focus-visible:ring-2 focus-visible:ring-white/50"
-              title="Ir a movimientos bancarios"
-            >
-              Movimientos
-            </Link>
+        {reconMode === RECON_MODES.ventas && (
+          <div className="flex w-full flex-wrap items-center justify-between gap-2 rounded-b-xl bg-zm-green px-4 py-3 text-white shadow-sm sm:px-6">
+            <h1 className="text-sm font-semibold tracking-tight sm:text-base">
+              Conciliación Loyverse ↔ banco
+            </h1>
+            <div className="flex shrink-0 items-center gap-2">
+              <Link
+                to={loyversePagoLink}
+                className="rounded-md px-2 py-1 text-[11px] font-semibold text-white/95 hover:bg-white/15 focus-visible:outline focus-visible:ring-2 focus-visible:ring-white/50"
+                title="Ir a ventas por tipo de pago"
+              >
+                Loyverse
+              </Link>
+              <Link
+                to={loyverseComprasLink}
+                className="rounded-md px-2 py-1 text-[11px] font-semibold text-white/95 hover:bg-white/15 focus-visible:outline focus-visible:ring-2 focus-visible:ring-white/50"
+                title="Ir a órdenes de compra"
+              >
+                Compras
+              </Link>
+              <Link
+                to={bankHubLink}
+                className="rounded-md px-2 py-1 text-[11px] font-semibold text-white/95 hover:bg-white/15 focus-visible:outline focus-visible:ring-2 focus-visible:ring-white/50"
+                title="Ir a movimientos bancarios"
+              >
+                Movimientos
+              </Link>
+            </div>
           </div>
-        </div>
+        )}
 
         <section className="rounded-xl border border-zm-green/20 bg-white p-3 shadow-sm sm:p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -702,17 +913,40 @@ export default function ZmLoyverseBankReconciliationPage() {
         )}
 
         {canShowComprasPanels && (
-          <div className={`grid gap-3 items-stretch ${gridColsClass}`}>
-            <section className="flex min-h-[min(42vh,22rem)] min-w-0 flex-col rounded-xl border border-zm-green/20 bg-white p-3 shadow-sm sm:p-4">
-              <div className="border-b border-zm-green/15 pb-2">
-                <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Órdenes de compra
-                </h2>
-                <p className="mt-0.5 text-sm font-medium text-zm-sidebar">
-                  {formatEsShortYmd(dateYmd)}
-                </p>
+          <>
+            <section className="rounded-xl border border-zm-green/25 bg-zm-cream/60 p-3 shadow-sm sm:p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  title="Empareja en orden: primera OC seleccionada con primer movimiento banco seleccionado, y así sucesivamente."
+                  disabled={
+                    reconcileSelectionBusy ||
+                    selectedPoLineIds.length === 0 ||
+                    selectedPoLineIds.length !== selectedBankMovementIds.length
+                  }
+                  onClick={() => void runReconcileSelection()}
+                  className="shrink-0 rounded-lg bg-zm-green px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50 sm:text-sm"
+                >
+                  {reconcileSelectionBusy ? "Guardando…" : "Conciliar selección"}
+                </button>
+                <span className="text-xs text-gray-700 tabular-nums">
+                  {selectedPoLineIds.length} OC · {selectedBankMovementIds.length} banco
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedPoLineIds([]);
+                    setSelectedBankMovementIds([]);
+                  }}
+                  className="ml-auto shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-1.5 text-xs font-semibold text-zm-green hover:bg-zm-green/5"
+                >
+                  Limpiar selección
+                </button>
               </div>
-              <div className="mt-2 min-h-0 flex-1 overflow-hidden">
+            </section>
+            <div className={`grid gap-3 items-stretch ${gridColsClass}`}>
+            <section className="flex min-h-[min(42vh,22rem)] min-w-0 flex-col rounded-xl border border-zm-green/20 bg-white p-3 shadow-sm sm:p-4">
+              <div className="min-h-0 flex-1 overflow-hidden">
                 <div className="max-h-[min(58vh,32rem)] overflow-y-auto overflow-x-hidden rounded-lg border border-zm-green/15 bg-white shadow-sm">
                   {purchaseLoading && !purchaseDay ? (
                     <p className="p-4 text-sm text-gray-500">Cargando…</p>
@@ -720,11 +954,35 @@ export default function ZmLoyverseBankReconciliationPage() {
                     <table className="w-full table-fixed border-collapse text-[11px] sm:text-xs">
                       <thead className="sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream">
                         <tr>
-                          <th className="w-8 px-1 py-2 text-center font-medium"> </th>
-                          <th className="px-1 py-2 text-left font-medium">OC</th>
-                          <th className="px-1 py-2 text-left font-medium">Artículo</th>
-                          <th className="px-1 py-2 text-right font-medium">USD</th>
-                          <th className="px-1 py-2 text-right font-medium">Bs~</th>
+                          <th className="w-8 px-1 py-1.5 text-center align-top font-medium"> </th>
+                          <th className="px-1 py-1.5 text-left align-top font-medium">
+                            <span className="mb-0.5 block text-[10px] font-normal text-gray-500">
+                              OC
+                            </span>
+                            <input
+                              type="search"
+                              value={poFilterOc}
+                              onChange={(e) => setPoFilterOc(e.target.value)}
+                              placeholder="Filtrar…"
+                              className="w-full min-w-0 rounded border border-gray-200 bg-white px-1 py-1 text-[11px] text-gray-900"
+                              aria-label="Filtrar por orden de compra"
+                            />
+                          </th>
+                          <th className="px-1 py-1.5 text-left align-top font-medium">
+                            <span className="mb-0.5 block text-[10px] font-normal text-gray-500">
+                              Artículo
+                            </span>
+                            <input
+                              type="search"
+                              value={poFilterItem}
+                              onChange={(e) => setPoFilterItem(e.target.value)}
+                              placeholder="Filtrar…"
+                              className="w-full min-w-0 rounded border border-gray-200 bg-white px-1 py-1 text-[11px] text-gray-900"
+                              aria-label="Filtrar por artículo"
+                            />
+                          </th>
+                          <th className="px-1 py-1.5 text-right align-bottom font-medium">USD</th>
+                          <th className="px-1 py-1.5 text-right align-bottom font-medium">Bs~</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -734,57 +992,61 @@ export default function ZmLoyverseBankReconciliationPage() {
                               No hay líneas pendientes para esta fecha.
                             </td>
                           </tr>
+                        ) : poLinesForTable.length === 0 ? (
+                          <tr className="border-t border-gray-100">
+                            <td colSpan={5} className="px-2 py-6 text-center text-sm text-gray-600">
+                              Ninguna línea coincide con el filtro.
+                            </td>
+                          </tr>
                         ) : (
-                          poLinesFiltered.map((row) => (
-                            <tr
-                              key={row.id}
-                              role="button"
-                              tabIndex={0}
-                              onClick={() =>
-                                setSelectedPoLineId((prev) =>
-                                  prev === row.id ? null : row.id
-                                )
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  setSelectedPoLineId((prev) =>
-                                    prev === row.id ? null : row.id
-                                  );
-                                }
-                              }}
-                              className={`cursor-pointer border-t border-gray-100 hover:bg-gray-50 ${
-                                selectedPoLineId === row.id
-                                  ? "bg-zm-yellow/30 ring-1 ring-inset ring-zm-green/35"
-                                  : ""
-                              } ${row.reconciled ? "opacity-70" : ""}`}
-                            >
-                              <td className="px-1 py-1.5 text-center">
-                                {row.reconciled ? (
-                                  <span
-                                    className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zm-green/15 text-zm-green"
-                                    title="Conciliada"
-                                  >
-                                    <Check className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
-                                  </span>
-                                ) : (
-                                  <span className="inline-block h-5 w-5 rounded-full border border-gray-200" />
-                                )}
-                              </td>
-                              <td className="truncate px-1 py-1.5 tabular-nums" title={row.po_number || ""}>
-                                {row.po_number || "—"}
-                              </td>
-                              <td className="break-words px-1 py-1.5" title={row.item_name || ""}>
-                                {row.item_name || "—"}
-                              </td>
-                              <td className="whitespace-nowrap px-1 py-1.5 text-right tabular-nums">
-                                {formatUsd(row.line_total)}
-                              </td>
-                              <td className="whitespace-nowrap px-1 py-1.5 text-right tabular-nums text-orange-600">
-                                {formatBs(row.line_total_bs_estimated)}
-                              </td>
-                            </tr>
-                          ))
+                          poLinesForTable.map((row) => {
+                            const selected = selectedPoLineIds.includes(row.id);
+                            return (
+                              <tr
+                                key={row.id}
+                                className={`border-t border-gray-100 hover:bg-gray-50 ${
+                                  selected ? "bg-zm-cream/60 ring-1 ring-inset ring-zm-green/30" : ""
+                                } ${
+                                  row.reconciled
+                                    ? "border-l-4 border-zm-green bg-emerald-50/50"
+                                    : ""
+                                }`}
+                              >
+                                <td className="px-1 py-1.5 text-center">
+                                  {row.reconciled ? (
+                                    <span
+                                      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zm-green/20 text-zm-green"
+                                      title="Conciliada con banco"
+                                    >
+                                      <Check className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
+                                    </span>
+                                  ) : (
+                                    <input
+                                      type="checkbox"
+                                      checked={selected}
+                                      disabled={row.reconciled}
+                                      onChange={() => toggleSelectedPoLine(row.id, row.reconciled)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="h-4 w-4 rounded-full border-gray-300 text-zm-green focus:ring-zm-green/40"
+                                      aria-label={`Seleccionar línea OC ${row.po_number || row.id}`}
+                                    />
+                                  )}
+                                </td>
+                                <td className="truncate px-1 py-1.5 tabular-nums" title={row.po_number || ""}>
+                                  {row.po_number || "—"}
+                                </td>
+                                <td className="break-words px-1 py-1.5" title={row.item_name || ""}>
+                                  {row.item_name || "—"}
+                                </td>
+                                <td className="whitespace-nowrap px-1 py-1.5 text-right tabular-nums">
+                                  {formatUsd(row.line_total)}
+                                </td>
+                                <td className="whitespace-nowrap px-1 py-1.5 text-right tabular-nums text-orange-600">
+                                  {formatBs(row.line_total_bs_estimated)}
+                                </td>
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
@@ -794,15 +1056,7 @@ export default function ZmLoyverseBankReconciliationPage() {
             </section>
 
             <section className="flex min-h-[min(42vh,22rem)] min-w-0 flex-col rounded-xl border border-zm-green/20 bg-white p-3 shadow-sm sm:p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zm-green/15 pb-2">
-                <div>
-                  <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Banco (todas las cuentas)
-                  </h2>
-                  <p className="mt-0.5 text-sm font-medium text-zm-sidebar">
-                    Débitos filtrados · {formatEsShortYmd(dateYmd)}
-                  </p>
-                </div>
+              <div className="mb-2 flex justify-end border-b border-zm-green/15 pb-2">
                 <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-gray-700">
                   <input
                     type="checkbox"
@@ -813,90 +1067,231 @@ export default function ZmLoyverseBankReconciliationPage() {
                   <span>Ver conciliadas</span>
                 </label>
               </div>
-              {purchaseDay ? (
-                <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                  <div className="flex gap-2">
-                    <dt className="text-gray-600">Movimientos</dt>
-                    <dd className="font-semibold tabular-nums text-gray-900">
-                      {purchaseDay.bank?.movement_count ?? "—"}
-                    </dd>
-                  </div>
-                  <div className="flex gap-2">
-                    <dt className="text-gray-600">Suma débitos Bs</dt>
-                    <dd className="font-semibold tabular-nums text-orange-600">
-                      Bs. {formatBs(purchaseDay.bank?.debit_total_bs)}
-                    </dd>
-                  </div>
-                  {purchaseDay.rate_bs > 0 ? (
-                    <div className="flex gap-2 text-xs text-gray-500">
-                      <dt>Tasa del día</dt>
-                      <dd className="tabular-nums">{formatBs(purchaseDay.rate_bs)}</dd>
-                    </div>
-                  ) : null}
-                </dl>
-              ) : purchaseLoading ? (
-                <p className="mt-2 text-sm text-gray-500">Cargando movimientos…</p>
-              ) : null}
-              <div className="mt-3 min-h-0 min-w-0 flex-1 overflow-hidden">
-                {purchaseDay ? (
-                  <div className="max-h-[min(58vh,32rem)] overflow-y-auto overflow-x-hidden rounded-lg border border-zm-green/15 bg-white shadow-sm [-webkit-overflow-scrolling:touch]">
-                    <table className="w-full table-fixed border-collapse text-xs sm:text-sm">
+              <div className="min-h-0 flex-1 overflow-hidden">
+                {purchaseLoading && !purchaseDay ? (
+                  <p className="p-3 text-sm text-gray-500">Cargando…</p>
+                ) : purchaseDay ? (
+                  <div className="max-h-[min(58vh,32rem)] overflow-y-auto overflow-x-auto rounded-lg border border-zm-green/15 bg-white shadow-sm [-webkit-overflow-scrolling:touch]">
+                    <table className="w-full min-w-[1080px] table-fixed border-collapse text-xs sm:text-sm">
                       <colgroup>
-                        <col className="w-[6%]" />
-                        <col className="w-[14%]" />
+                        <col className="w-[5%]" />
+                        <col className="w-[12%]" />
                         <col className="w-[9%]" />
-                        <col className="w-[12%]" />
-                        <col className="w-[30%]" />
                         <col className="w-[7%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[20%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[5%]" />
                         <col className="w-[12%]" />
-                        <col className="w-[10%]" />
+                        <col className="w-[7%]" />
+                        <col className="w-[5%]" />
                       </colgroup>
                       <thead className="sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream">
                         <tr>
-                          <th className="px-1 py-2 text-center font-medium sm:px-2"> </th>
-                          <th className="px-1 py-2 text-left font-medium sm:px-2">Cuenta</th>
-                          <th className="px-1 py-2 text-left font-medium sm:px-2">Fecha</th>
-                          <th className="px-1 py-2 text-left font-medium sm:px-2">Ref.</th>
-                          <th className="px-1 py-2 text-left font-medium sm:px-2">Desc.</th>
-                          <th className="px-1 py-2 text-left font-medium sm:px-2">Cód.</th>
-                          <th className="px-1 py-2 text-right font-medium sm:px-2">Débito</th>
-                          <th className="px-1 py-2 text-right font-medium sm:px-2"> </th>
+                          <th className="min-w-0 px-1 py-2 align-top sm:px-1.5">
+                            <div className="flex min-h-[3.5rem] flex-col justify-end gap-1">
+                              <span className="text-center text-[10px] font-semibold leading-tight text-gray-700">
+                                Vista
+                              </span>
+                              <label htmlFor="zm-recon-bank-debit-view" className="sr-only">
+                                Vista de débitos
+                              </label>
+                              <select
+                                id="zm-recon-bank-debit-view"
+                                value={purchaseBankDebitView}
+                                onChange={(e) => setPurchaseBankDebitView(e.target.value)}
+                                className="h-7 w-full min-w-0 rounded border border-gray-200 bg-white px-0.5 text-[10px] font-semibold text-gray-800"
+                                title="Todos los débitos u ocultar comisión 751 emparejada con 487"
+                              >
+                                <option value={PURCHASE_BANK_DEBIT_VIEWS.all}>Todos</option>
+                                <option value={PURCHASE_BANK_DEBIT_VIEWS.hidePmFee751}>Sin 751</option>
+                              </select>
+                            </div>
+                          </th>
+                          <th className="min-w-0 px-1 py-2 text-left align-top sm:px-1.5">
+                            <div className="flex min-h-[3.5rem] flex-col justify-end gap-1">
+                              <span className="line-clamp-2 text-[10px] font-semibold leading-tight text-gray-700">
+                                Cuenta
+                              </span>
+                              <input
+                                type="search"
+                                value={purchaseBankFilterAccount}
+                                onChange={(e) => setPurchaseBankFilterAccount(e.target.value)}
+                                placeholder="Filtrar…"
+                                className="h-7 w-full min-w-0 rounded border border-gray-200 bg-white px-1 text-[10px] text-gray-900"
+                                aria-label="Filtrar por cuenta"
+                              />
+                            </div>
+                          </th>
+                          <th className="min-w-0 px-1 py-2 text-left align-top sm:px-1.5">
+                            <div className="flex min-h-[3.5rem] flex-col justify-end gap-1">
+                              <span className="line-clamp-2 text-[10px] font-semibold leading-tight text-gray-700">
+                                Tipo mov.
+                              </span>
+                              <input
+                                type="search"
+                                value={purchaseBankFilterTxnType}
+                                onChange={(e) => setPurchaseBankFilterTxnType(e.target.value)}
+                                placeholder="Filtrar…"
+                                className="h-7 w-full min-w-0 rounded border border-gray-200 bg-white px-1 text-[10px] text-gray-900"
+                                aria-label="Filtrar por tipo de movimiento"
+                              />
+                            </div>
+                          </th>
+                          <th className="min-w-0 px-1 py-2 text-left align-top sm:px-1.5">
+                            <div className="flex min-h-[3.5rem] flex-col justify-end gap-1">
+                              <span className="line-clamp-2 text-[10px] font-semibold leading-tight text-gray-700">
+                                Fecha
+                              </span>
+                              <div className="h-7 shrink-0" aria-hidden />
+                            </div>
+                          </th>
+                          <th className="min-w-0 px-1 py-2 text-left align-top sm:px-1.5">
+                            <div className="flex min-h-[3.5rem] flex-col justify-end gap-1">
+                              <span className="line-clamp-2 text-[10px] font-semibold leading-tight text-gray-700">
+                                Ref.
+                              </span>
+                              <input
+                                type="search"
+                                value={purchaseBankFilterRef}
+                                onChange={(e) => setPurchaseBankFilterRef(e.target.value)}
+                                placeholder="Filtrar…"
+                                className="h-7 w-full min-w-0 rounded border border-gray-200 bg-white px-1 text-[10px] text-gray-900"
+                                aria-label="Filtrar por referencia"
+                              />
+                            </div>
+                          </th>
+                          <th className="min-w-0 px-1 py-2 text-left align-top sm:px-1.5">
+                            <div className="flex min-h-[3.5rem] flex-col justify-end gap-1">
+                              <span className="line-clamp-2 text-[10px] font-semibold leading-tight text-gray-700">
+                                Desc.
+                              </span>
+                              <input
+                                type="search"
+                                value={purchaseBankFilterDesc}
+                                onChange={(e) => setPurchaseBankFilterDesc(e.target.value)}
+                                placeholder="Filtrar…"
+                                className="h-7 w-full min-w-0 rounded border border-gray-200 bg-white px-1 text-[10px] text-gray-900"
+                                aria-label="Filtrar por descripción"
+                              />
+                            </div>
+                          </th>
+                          <th className="min-w-0 px-1 py-2 text-left align-top sm:px-1.5">
+                            <div className="flex min-h-[3.5rem] flex-col justify-end gap-1">
+                              <span className="line-clamp-2 text-[10px] font-semibold leading-tight text-gray-700">
+                                Tipo op.
+                              </span>
+                              <input
+                                type="search"
+                                value={purchaseBankFilterOpType}
+                                onChange={(e) => setPurchaseBankFilterOpType(e.target.value)}
+                                placeholder="Filtrar…"
+                                className="h-7 w-full min-w-0 rounded border border-gray-200 bg-white px-1 text-[10px] text-gray-900"
+                                aria-label="Filtrar por tipo de operación"
+                              />
+                            </div>
+                          </th>
+                          <th className="min-w-0 px-1 py-2 text-left align-top sm:px-1.5">
+                            <div className="flex min-h-[3.5rem] flex-col justify-end gap-1">
+                              <span className="line-clamp-2 text-[10px] font-semibold leading-tight text-gray-700">
+                                Cód.
+                              </span>
+                              <input
+                                type="search"
+                                value={purchaseBankFilterCode}
+                                onChange={(e) => setPurchaseBankFilterCode(e.target.value)}
+                                placeholder="Filtrar…"
+                                className="h-7 w-full min-w-0 rounded border border-gray-200 bg-white px-1 text-[10px] text-gray-900"
+                                aria-label="Filtrar por código"
+                              />
+                            </div>
+                          </th>
+                          <th className="min-w-0 px-1 py-2 text-left align-top sm:px-1.5">
+                            <div className="flex min-h-[3.5rem] flex-col justify-end gap-1">
+                              <span className="line-clamp-2 text-[10px] font-semibold leading-tight text-gray-700">
+                                Categoría
+                              </span>
+                              <select
+                                value={purchaseBankFilterCategory}
+                                onChange={(e) => setPurchaseBankFilterCategory(e.target.value)}
+                                className="h-7 w-full min-w-0 rounded border border-gray-200 bg-white px-0.5 text-[10px] text-gray-900"
+                                aria-label="Filtrar por categoría"
+                              >
+                                <option value="">Todas</option>
+                                {purchaseBankCategoryOptions.map((c) => (
+                                  <option key={c} value={c}>
+                                    {c}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </th>
+                          <th className="min-w-0 px-1 py-2 text-right align-top sm:px-1.5">
+                            <div className="flex min-h-[3.5rem] flex-col items-end justify-end gap-1">
+                              <span className="line-clamp-2 text-[10px] font-semibold leading-tight text-gray-700">
+                                Débito
+                              </span>
+                              <div className="h-7 w-full shrink-0" aria-hidden />
+                            </div>
+                          </th>
+                          <th className="min-w-0 px-1 py-2 text-right align-top sm:px-1.5">
+                            <div className="flex min-h-[3.5rem] flex-col items-stretch justify-end gap-1">
+                              <span className="text-right text-[10px] font-semibold leading-tight text-gray-700">
+                                Acción
+                              </span>
+                              <button
+                                type="button"
+                                disabled={!purchaseBankColFiltersActive}
+                                onClick={clearPurchaseBankColumnFilters}
+                                className="h-7 w-full rounded border border-zm-green/35 bg-white px-1 text-[10px] font-semibold text-zm-green hover:bg-zm-green/5 disabled:opacity-40"
+                                title="Quitar filtros de columnas"
+                              >
+                                Limpiar
+                              </button>
+                            </div>
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
-                        {(purchaseDay.bank_movements || []).length === 0 ? (
+                        {purchaseBankRowsFinal.length === 0 ? (
                           <tr className="border-t border-gray-100">
-                            <td colSpan={8} className="px-3 py-8 text-center text-sm text-gray-600">
+                            <td colSpan={11} className="px-3 py-8 text-center text-sm text-gray-600">
                               No hay movimientos con este criterio.
                             </td>
                           </tr>
                         ) : (
-                          purchaseDay.bank_movements.map((m) => {
+                          purchaseBankRowsFinal.map((m) => {
                             const busy = linkBusyId === m.id;
-                            const canLink =
-                              Boolean(selectedPoLineId) &&
-                              !m.reconciled &&
-                              !busy;
+                            const selected = selectedBankMovementIds.includes(m.id);
                             return (
                               <tr
                                 key={m.id}
-                                className={`border-t border-gray-100 ${
-                                  canLink ? "cursor-pointer hover:bg-zm-cream/50" : ""
-                                } ${m.reconciled ? "bg-zm-green/5" : ""}`}
-                                onClick={() => {
-                                  if (canLink) void onBankRowClickPurchase(m);
-                                }}
+                                className={`border-t border-gray-100 hover:bg-gray-50 ${
+                                  m.reconciled
+                                    ? "border-l-4 border-zm-green bg-emerald-50/55"
+                                    : ""
+                                } ${selected && !m.reconciled ? "bg-zm-cream/50 ring-1 ring-inset ring-zm-green/25" : ""}`}
                               >
                                 <td className="px-1 py-2 text-center sm:px-2">
                                   {m.reconciled ? (
                                     <span
-                                      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zm-green/15 text-zm-green"
-                                      title="Conciliado"
+                                      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zm-green/20 text-zm-green"
+                                      title="Conciliado con orden de compra"
                                     >
                                       <Check className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
                                     </span>
                                   ) : (
-                                    <span className="inline-block h-5 w-5 rounded-full border border-gray-200" />
+                                    <input
+                                      type="checkbox"
+                                      checked={selected}
+                                      disabled={m.reconciled}
+                                      onChange={() =>
+                                        toggleSelectedBankMovement(m.id, m.reconciled)
+                                      }
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="h-4 w-4 rounded-full border-gray-300 text-zm-green focus:ring-zm-green/40"
+                                      aria-label={`Seleccionar movimiento banco ${m.id}`}
+                                    />
                                   )}
                                 </td>
                                 <td
@@ -904,6 +1299,12 @@ export default function ZmLoyverseBankReconciliationPage() {
                                   title={m.bank_account_name || ""}
                                 >
                                   {m.bank_account_name || "—"}
+                                </td>
+                                <td
+                                  className="truncate px-1 py-2 text-[11px] sm:px-2 sm:text-xs"
+                                  title={m.transaction_type || ""}
+                                >
+                                  {m.transaction_type?.trim() ? m.transaction_type : "—"}
                                 </td>
                                 <td className="whitespace-nowrap px-1 py-2 tabular-nums sm:px-2">
                                   {m.movement_date}
@@ -920,8 +1321,29 @@ export default function ZmLoyverseBankReconciliationPage() {
                                 >
                                   {m.description || "—"}
                                 </td>
+                                <td
+                                  className="truncate px-1 py-2 text-[11px] sm:px-2 sm:text-xs"
+                                  title={m.operation_type || ""}
+                                >
+                                  {m.operation_type?.trim() ? m.operation_type : "—"}
+                                </td>
                                 <td className="whitespace-nowrap px-1 py-2 font-mono text-[10px] text-gray-600 sm:px-2 sm:text-xs">
                                   {m.transaction_code || "—"}
+                                </td>
+                                <td
+                                  className={`truncate px-1 py-2 text-[10px] sm:px-2 sm:text-xs ${
+                                    String(m.category || "").trim() ===
+                                    PURCHASE_INVENTORY_CATEGORY
+                                      ? "text-gray-700"
+                                      : "font-medium text-amber-800"
+                                  }`}
+                                  title={
+                                    m.category
+                                      ? `${m.category}${m.subcategory && m.subcategory !== "—" ? ` · ${m.subcategory}` : ""}`
+                                      : ""
+                                  }
+                                >
+                                  {m.category?.trim() ? m.category : "—"}
                                 </td>
                                 <td className="whitespace-nowrap px-1 py-2 text-right font-semibold tabular-nums sm:px-2">
                                   {formatBs(m.debit_bs)}
@@ -952,6 +1374,7 @@ export default function ZmLoyverseBankReconciliationPage() {
               </div>
             </section>
           </div>
+          </>
         )}
       </div>
     </div>

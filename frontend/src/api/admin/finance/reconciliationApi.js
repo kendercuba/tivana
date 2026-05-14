@@ -61,6 +61,21 @@ export async function postPurchaseReconciliationLink({ bankMovementId, zmPoLineI
   return data.data;
 }
 
+/** @param {{ pairs: { bankMovementId: number, zmPoLineId: number }[] }} param0 */
+export async function postPurchaseReconciliationLinksBatch({ pairs }) {
+  const response = await fetch(`${API_URL}/finance/reconciliation/purchase-links`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pairs }),
+  });
+  const data = await parseJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(data.message || "No se pudo guardar los vínculos.");
+  }
+  return data.data;
+}
+
 export async function deletePurchaseReconciliationLink(bankMovementId) {
   const response = await fetch(
     `${API_URL}/finance/reconciliation/purchase-links/${encodeURIComponent(String(bankMovementId))}`,

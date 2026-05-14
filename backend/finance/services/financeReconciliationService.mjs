@@ -1,6 +1,8 @@
 import { pool } from "../../db.mjs";
+import { updateBankMovementCategory } from "./bankImportService.mjs";
 
 const WORKSPACE_PO = "zm_purchase";
+const PURCHASE_INVENTORY_CATEGORY = "Compra inventario";
 
 function clampInt(n, lo, hi) {
   const v = Math.floor(Number(n));
@@ -98,6 +100,8 @@ export async function getPurchaseReconciliationDay({
       m.transaction_code,
       m.transaction_type,
       m.operation_type,
+      m.category,
+      m.subcategory,
       m.debit_bs::numeric AS debit_bs,
       EXISTS (
         SELECT 1 FROM finance_reconciliation_links r
@@ -123,7 +127,7 @@ export async function getPurchaseReconciliationDay({
           '%transfer%', '%tranf%', '%movil%', '%móvil%', '%tarjeta%',
           '%pos%', '%debit%', '%pago%', '%cred inm%', '%inmediat%'
         ])
-        OR TRIM(COALESCE(m.transaction_code, '')) IN ('387', '377', '262')
+        OR TRIM(COALESCE(m.transaction_code, '')) IN ('387', '377', '262', '487', '751')
       )
     ORDER BY m.bank_account_id ASC, m.id ASC
     LIMIT 500
@@ -139,6 +143,8 @@ export async function getPurchaseReconciliationDay({
       m.transaction_code,
       m.transaction_type,
       m.operation_type,
+      m.category,
+      m.subcategory,
       m.debit_bs::numeric AS debit_bs,
       EXISTS (
         SELECT 1 FROM finance_reconciliation_links r
@@ -164,7 +170,7 @@ export async function getPurchaseReconciliationDay({
           '%transfer%', '%tranf%', '%movil%', '%móvil%', '%tarjeta%',
           '%pos%', '%debit%', '%pago%', '%cred inm%', '%inmediat%'
         ])
-        OR TRIM(COALESCE(m.transaction_code, '')) IN ('387', '377', '262')
+        OR TRIM(COALESCE(m.transaction_code, '')) IN ('387', '377', '262', '487', '751')
       )
       AND NOT EXISTS (
         SELECT 1 FROM finance_reconciliation_links r2
@@ -213,6 +219,7 @@ export async function createPurchaseReconciliationLink({
     `,
     [WORKSPACE_PO, bid, pid]
   );
+  await updateBankMovementCategory(bid, PURCHASE_INVENTORY_CATEGORY);
   return rows[0];
 }
 
@@ -227,4 +234,26 @@ export async function deletePurchaseReconciliationLink({ bankMovementId }) {
     [bid, WORKSPACE_PO]
   );
   return { deleted: rowCount > 0 };
+}
+
+/**
+ * Creates several OC↔banco links in order (each movement updates category to Compra inventario).
+ * @param {{ pairs: { bankMovementId: number, zmPoLineId: number }[] }} p
+ */
+export async function createPurchaseReconciliationLinksBatch({ pairs }) {
+  if (!Array.isArray(pairs) || pairs.length === 0) {
+    throw new Error("Enviá al menos un par banco ↔ línea de compra.");
+  }
+  if (pairs.length > 50) {
+    throw new Error("Máximo 50 vínculos por operación.");
+  }
+  const results = [];
+  for (const pair of pairs) {
+    const row = await createPurchaseReconciliationLink({
+      bankMovementId: pair.bankMovementId ?? pair.bank_movement_id,
+      zmPoLineId: pair.zmPoLineId ?? pair.zm_po_line_id,
+    });
+    results.push(row);
+  }
+  return { count: results.length, links: results };
 }

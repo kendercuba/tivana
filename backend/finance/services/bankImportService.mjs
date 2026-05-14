@@ -219,7 +219,13 @@ export async function listMovementsByBankAccountId(
       m.movement_type,
       m.source_file,
       m.import_batch_id,
-      m.raw_data
+      m.raw_data,
+      EXISTS (
+        SELECT 1
+        FROM finance_reconciliation_links r
+        WHERE r.bank_movement_id = m.id
+          AND r.workspace = 'zm_purchase'
+      ) AS purchase_po_reconciled
     FROM finance_bank_movements m
     INNER JOIN finance_import_batches b
       ON b.id = m.import_batch_id AND b.import_type = 'bnc'
@@ -258,7 +264,13 @@ export async function listMovementsByBatchId(batchId) {
       movement_type,
       source_file,
       import_batch_id,
-      raw_data
+      raw_data,
+      EXISTS (
+        SELECT 1
+        FROM finance_reconciliation_links r
+        WHERE r.bank_movement_id = finance_bank_movements.id
+          AND r.workspace = 'zm_purchase'
+      ) AS purchase_po_reconciled
     FROM finance_bank_movements
     WHERE import_batch_id = $1
     ORDER BY movement_date ASC NULLS LAST, id ASC

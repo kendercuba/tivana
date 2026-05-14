@@ -1737,6 +1737,9 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                     const rowBatch = movementImportBatchId(m);
                     const isImportedHighlight =
                       hl != null && rowBatch != null && rowBatch === hl;
+                    const isPurchasePoReconciled = Boolean(
+                      m.purchase_po_reconciled ?? m.purchasePoReconciled
+                    );
                     return (
                       <tr
                         key={m.id}
@@ -1745,9 +1748,11 @@ const BankMovementsTableBlock = forwardRef(function BankMovementsTableBlock(
                             ? comfy
                               ? "border-zm-green/10 bg-zm-yellow/30 hover:bg-zm-yellow/40"
                               : "border-zm-green/10 bg-zm-yellow/30 hover:bg-zm-yellow/40"
-                            : comfy
-                              ? "border-slate-100 hover:bg-blue-50/40 odd:bg-white even:bg-slate-50/50"
-                              : "hover:bg-gray-50"
+                            : isPurchasePoReconciled
+                              ? "border-l-4 border-zm-green bg-emerald-50/50 hover:bg-emerald-50/70"
+                              : comfy
+                                ? "border-slate-100 hover:bg-blue-50/40 odd:bg-white even:bg-slate-50/50"
+                                : "hover:bg-gray-50"
                         }`}
                       >
                         {visibleCol("movement_date") && (

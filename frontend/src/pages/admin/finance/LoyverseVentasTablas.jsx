@@ -1,12 +1,14 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Banknote, CreditCard, Smartphone, Send, Upload } from "lucide-react";
+import { Banknote, Check, CreditCard, Smartphone, Send, Upload } from "lucide-react";
 import {
   fetchLoyverseFactsByTypes,
   fetchLoyverseDailyRates,
   saveLoyverseDailyRate,
   validateLoyverseReportHint,
 } from "../../../api/admin/finance/loyverseApi";
+import { fetchBankAccounts } from "../../../api/admin/finance/bankApi";
+import { fetchLoyverseBankMatchStatusesInRange } from "../../../api/admin/finance/loyverseBankReconciliationApi.js";
 import { filesFromFileList } from "../../../utils/filesFromFileList.js";
 import LoyversePorPagoDateRange from "../../../components/admin/finance/LoyversePorPagoDateRange.jsx";
 import LoyverseImportBatchHistory from "../../../components/admin/finance/LoyverseImportBatchHistory.jsx";
@@ -481,6 +483,12 @@ export function LoyverseResumenVentas({
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
 
+  const financeBase = useFinanceBasePath();
+  const [bankAccounts, setBankAccounts] = useState([]);
+  const [matchBankAccountId, setMatchBankAccountId] = useState(null);
+  const [ventasBankMatchByDate, setVentasBankMatchByDate] = useState({});
+  const [ventasBankMatchLoading, setVentasBankMatchLoading] = useState(false);
+
   const refreshFacts = useCallback(async () => {
     try {
       setLoading(true);
@@ -516,6 +524,28 @@ export function LoyverseResumenVentas({
   useEffect(() => {
     refreshFacts();
   }, [refreshFacts]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetchBankAccounts({ includeInactive: false });
+        const list = res.data || [];
+        if (!cancelled) {
+          setBankAccounts(list);
+          setMatchBankAccountId((prev) => {
+            if (prev != null && list.some((a) => a.id === prev)) return prev;
+            return list[0]?.id ?? null;
+          });
+        }
+      } catch {
+        if (!cancelled) setBankAccounts([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!importResult?.success || importResult?.data?.importBatchId == null) {
@@ -630,6 +660,50 @@ export function LoyverseResumenVentas({
     out.sort((a, b) => b.localeCompare(a));
     return out;
   }, [rangeStart, rangeEnd]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (matchBankAccountId == null || !rangeStart || !rangeEnd) {
+        setVentasBankMatchByDate({});
+        return;
+      }
+      const loRange = minYmd(rangeStart, rangeEnd);
+      const hiRange = maxYmd(rangeStart, rangeEnd);
+      const dates = resumenDisplayDates.filter(
+        (d) => d >= loRange && d <= hiRange && rowsByDate.has(d)
+      );
+      if (dates.length === 0) {
+        setVentasBankMatchByDate({});
+        return;
+      }
+      const lo = dates.reduce((a, b) => (a < b ? a : b));
+      const hi = dates.reduce((a, b) => (a > b ? a : b));
+      setVentasBankMatchLoading(true);
+      try {
+        const data = await fetchLoyverseBankMatchStatusesInRange({
+          startYmd: lo,
+          endYmd: hi,
+          bankAccountId: matchBankAccountId,
+          paymentMethod: "pago_movil",
+        });
+        if (!cancelled) setVentasBankMatchByDate(data || {});
+      } catch {
+        if (!cancelled) setVentasBankMatchByDate({});
+      } finally {
+        if (!cancelled) setVentasBankMatchLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    matchBankAccountId,
+    rangeStart,
+    rangeEnd,
+    resumenDisplayDates,
+    rowsByDate,
+  ]);
 
   const totals = useMemo(() => {
     const rateFn = (dateStr) => {
@@ -949,8 +1023,40 @@ export function LoyverseResumenVentas({
                 </div>
               </section>
 
+              <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-zm-green/15 bg-white px-3 py-2 shadow-sm">
+                <span className="text-xs font-semibold text-zm-sidebar shrink-0">
+                  Cotejo pago móvil
+                </span>
+                <select
+                  value={matchBankAccountId ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setMatchBankAccountId(v === "" ? null : Number(v));
+                  }}
+                  disabled={bankAccounts.length === 0}
+                  className="max-w-[min(18rem,85vw)] rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-900"
+                  aria-label="Cuenta bancaria para comparar abonos con Loyverse"
+                >
+                  {bankAccounts.length === 0 ? (
+                    <option value="">Sin cuentas</option>
+                  ) : (
+                    bankAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <Link
+                  to={`${financeBase}/conciliacion`}
+                  className="ml-auto text-xs font-semibold text-zm-green underline-offset-2 hover:underline"
+                >
+                  Abrir conciliación
+                </Link>
+              </div>
+
               <div className="max-h-[min(65vh,36rem)] sm:max-h-[min(70vh,42rem)] overflow-y-auto overflow-x-auto border border-zm-green/15 rounded-lg bg-white shadow-sm [-webkit-overflow-scrolling:touch]">
-                <table className="min-w-[920px] w-full text-sm">
+                <table className="min-w-[1000px] w-full text-sm">
                   <thead className="sticky top-0 z-10 border-b border-zm-green/25 bg-zm-cream [&_th]:bg-zm-cream">
                     <tr>
                       <th className="text-left px-3 py-2">Fecha</th>
@@ -984,6 +1090,12 @@ export function LoyverseResumenVentas({
                       <th className="text-right px-3 py-2 text-xs font-normal text-gray-500">
                         Lote
                       </th>
+                      <th
+                        className="text-center px-3 py-2 text-xs font-normal text-gray-500 whitespace-nowrap"
+                        title="Abonos pago móvil del día en la cuenta elegida vs ventas Loyverse importadas"
+                      >
+                        PM / banco
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1002,6 +1114,9 @@ export function LoyverseResumenVentas({
                         highlightBatchId != null &&
                         r?.import_batch_id != null &&
                         Number(r.import_batch_id) === Number(highlightBatchId);
+                      const matchSt = r ? ventasBankMatchByDate[dateStr] : null;
+                      const bankOk =
+                        matchSt === "ok" || matchSt === "ok_sobre";
 
                       return (
                         <tr
@@ -1011,7 +1126,9 @@ export function LoyverseResumenVentas({
                           } ${
                             isNewFromUpload
                               ? "border-zm-green/10 bg-zm-yellow/30 hover:bg-zm-yellow/40"
-                              : ""
+                              : !isPlaceholder && bankOk && r
+                                ? "border-l-4 border-zm-green bg-emerald-50/45 hover:bg-emerald-50/55"
+                                : ""
                           }`}
                         >
                           <td className="px-3 py-2 whitespace-nowrap">
@@ -1081,6 +1198,31 @@ export function LoyverseResumenVentas({
                             {r?.import_batch_id != null
                               ? `#${r.import_batch_id}`
                               : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-center align-middle">
+                            {isPlaceholder ? (
+                              "—"
+                            ) : ventasBankMatchLoading ? (
+                              <span className="text-xs text-gray-400">…</span>
+                            ) : bankOk ? (
+                              <span
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-zm-green/15 text-zm-green"
+                                title="Totales Loyverse y banco alineados (pago móvil)"
+                              >
+                                <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+                              </span>
+                            ) : matchSt && matchSt !== "sin_datos" ? (
+                              <span
+                                className="text-xs font-semibold text-amber-700"
+                                title={matchSt}
+                              >
+                                ·
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-300" title="Sin dato de cotejo">
+                                ○
+                              </span>
+                            )}
                           </td>
                         </tr>
                       );

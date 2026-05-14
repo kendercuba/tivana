@@ -38,3 +38,25 @@ export async function fetchLoyverseBankReconciliationSnapshot(params) {
   }
   return data.data;
 }
+
+export async function fetchLoyverseBankMatchStatusesInRange({
+  startYmd,
+  endYmd,
+  bankAccountId,
+  paymentMethod = "pago_movil",
+}) {
+  const q = new URLSearchParams();
+  q.set("startYmd", String(startYmd || "").slice(0, 10));
+  q.set("endYmd", String(endYmd || "").slice(0, 10));
+  q.set("bankAccountId", String(bankAccountId ?? ""));
+  q.set("paymentMethod", String(paymentMethod || "pago_movil"));
+  const response = await fetch(
+    `${API_URL}/finance/loyverse-bank-reconciliation/match-statuses?${q.toString()}`,
+    { credentials: "include" }
+  );
+  const data = await parseJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(data.message || "Error cargando cotejo por fechas.");
+  }
+  return data.data;
+}

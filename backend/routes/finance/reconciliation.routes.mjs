@@ -3,6 +3,7 @@ import {
   getPurchaseReconciliationSummary,
   getPurchaseReconciliationDay,
   createPurchaseReconciliationLink,
+  createPurchaseReconciliationLinksBatch,
   deletePurchaseReconciliationLink,
 } from "../../finance/services/financeReconciliationService.mjs";
 
@@ -45,6 +46,11 @@ router.get("/purchase-day", async (req, res) => {
 
 router.post("/purchase-links", express.json(), async (req, res) => {
   try {
+    const bodyPairs = req.body?.pairs;
+    if (Array.isArray(bodyPairs) && bodyPairs.length > 0) {
+      const data = await createPurchaseReconciliationLinksBatch({ pairs: bodyPairs });
+      return res.json({ success: true, data });
+    }
     const row = await createPurchaseReconciliationLink({
       bankMovementId: req.body?.bankMovementId ?? req.body?.bank_movement_id,
       zmPoLineId: req.body?.zmPoLineId ?? req.body?.zm_po_line_id,
@@ -52,7 +58,7 @@ router.post("/purchase-links", express.json(), async (req, res) => {
     return res.json({ success: true, data: row });
   } catch (error) {
     console.error("❌ Error creando vínculo conciliación:", error);
-    const status = /inválid/i.test(error.message || "") ? 400 : 500;
+    const status = /inválid|Enviá|máximo/i.test(error.message || "") ? 400 : 500;
     return res.status(status).json({
       success: false,
       message: error.message || "Error guardando vínculo.",
