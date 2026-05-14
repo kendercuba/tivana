@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Banknote, CreditCard, Smartphone, Send, Upload } from "lucide-react";
 import {
   fetchLoyverseFactsByTypes,
@@ -10,6 +11,7 @@ import { filesFromFileList } from "../../../utils/filesFromFileList.js";
 import LoyversePorPagoDateRange from "../../../components/admin/finance/LoyversePorPagoDateRange.jsx";
 import LoyverseImportBatchHistory from "../../../components/admin/finance/LoyverseImportBatchHistory.jsx";
 import useLoyverseImport from "../../../hooks/admin/finance/useLoyverseImport";
+import { useFinanceBasePath } from "../../../contexts/FinanceBasePathContext.jsx";
 
 /** Excel/CSV Loyverse; el sistema distingue el reporte por cabeceras, no por extensión. */
 const LOYVERSE_UPLOAD_ACCEPT =
@@ -1104,6 +1106,7 @@ export function LoyverseVentasPorPago({
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
   const [rangeBootstrapped, setRangeBootstrapped] = useState(false);
+  const financeBase = useFinanceBasePath();
   /** YYYY-MM-DD → lote POS (tarjeta); borrador local hasta cruce con banco. */
   const [posBatchByDate, setPosBatchByDate] = useState(() => {
     try {
@@ -1825,8 +1828,21 @@ export function LoyverseVentasPorPago({
                             </td>
                           )}
                           <td className="px-1.5 py-2 sm:px-2 min-w-0 align-middle text-left border-r border-gray-100">
-                            <div className="flex min-h-[2.25rem] w-full items-center justify-start pl-0.5 sm:pl-1">
-                              <PaymentMethodWithIcon paymentMethod={r.payment_method} />
+                            <div className="flex min-h-[2.25rem] w-full min-w-0 items-center justify-between gap-1.5 pl-0.5 sm:pl-1 pr-0.5">
+                              <div className="min-w-0 shrink">
+                                <PaymentMethodWithIcon paymentMethod={r.payment_method} />
+                              </div>
+                              {String(r.payment_method || "").toLowerCase() === "pago_movil" ? (
+                                <Link
+                                  to={`${financeBase}/conciliacion?${new URLSearchParams({
+                                    date: day.dateYmd,
+                                    paymentMethod: "pago_movil",
+                                  }).toString()}`}
+                                  className="shrink-0 text-xs font-semibold text-zm-green hover:underline"
+                                >
+                                  Conciliar
+                                </Link>
+                              ) : null}
                             </div>
                           </td>
                           <td className="px-1.5 py-2 sm:px-2 align-middle text-right">

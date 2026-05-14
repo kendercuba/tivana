@@ -10,6 +10,7 @@ import purchaseOrdersRoutes from "./purchase-orders.routes.mjs";
 import zmWeeklyOverviewRoutes from "./zm-weekly-overview.routes.mjs";
 import reportingGapsRoutes from "./reporting-gaps.routes.mjs";
 import zmManualExpensesRoutes from "./zm-manual-expenses.routes.mjs";
+import loyverseBankReconciliationRoutes from "./loyverse-bank-reconciliation.routes.mjs";
 
 const router = express.Router();
 
@@ -27,6 +28,7 @@ router.get("/ping", (req, res) => {
       "zm-weekly-overview",
       "reporting-gaps",
       "zm-manual-expenses",
+      "loyverse-bank-reconciliation",
     ],
   });
 });
@@ -40,6 +42,10 @@ router.use("/purchase-orders", purchaseOrdersRoutes);
 router.use("/zm-weekly-overview", zmWeeklyOverviewRoutes);
 router.use("/reporting-gaps", reportingGapsRoutes);
 router.use("/zm-manual-expenses", zmManualExpensesRoutes);
+router.use(
+  "/loyverse-bank-reconciliation",
+  loyverseBankReconciliationRoutes
+);
 router.use("/daily-close", dailyCloseRoutes);
 router.use("/dashboard", dashboardRoutes);
 

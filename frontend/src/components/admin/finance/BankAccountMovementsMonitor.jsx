@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format, startOfDay, subDays } from "date-fns";
-import { Settings2, Upload } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Settings2, Upload, Link2 } from "lucide-react";
 import BankMovementsTableBlock, { RefreshIcon } from "./BankMovementsTableBlock.jsx";
 import LoyversePorPagoDateRange from "./LoyversePorPagoDateRange.jsx";
 import {
@@ -10,6 +11,7 @@ import {
 } from "../../../api/admin/finance/bankApi";
 import useBankImport from "../../../hooks/admin/finance/useBankImport";
 import { filesFromFileList } from "../../../utils/filesFromFileList.js";
+import { useFinanceBasePath } from "../../../contexts/FinanceBasePathContext.jsx";
 
 function movementDateKey(m) {
   const raw = m.movement_date;
@@ -90,6 +92,24 @@ export default function BankAccountMovementsMonitor({
     () => filterByYmdRange(monitorMovements, rangeStart, rangeEnd),
     [monitorMovements, rangeStart, rangeEnd]
   );
+
+  const financeBase = useFinanceBasePath();
+  const reconDateYmd = useMemo(() => {
+    if (!rangeStart || !rangeEnd) return "";
+    const from = rangeStart <= rangeEnd ? rangeStart : rangeEnd;
+    const to = rangeStart <= rangeEnd ? rangeEnd : rangeStart;
+    return to;
+  }, [rangeStart, rangeEnd]);
+
+  const reconLoyverseHref = useMemo(() => {
+    if (!reconDateYmd || monitorAccountId == null) return "";
+    const q = new URLSearchParams({
+      date: reconDateYmd,
+      bankAccountId: String(monitorAccountId),
+      paymentMethod: "pago_movil",
+    });
+    return `${financeBase}/conciliacion?${q.toString()}`;
+  }, [financeBase, reconDateYmd, monitorAccountId]);
 
   useEffect(() => {
     if (!pendingBankImportRangeFallbackRef.current) return;
@@ -411,6 +431,25 @@ export default function BankAccountMovementsMonitor({
                 <Settings2 className="h-4 w-4 shrink-0 text-zm-green" aria-hidden />
                 Columnas
               </button>
+              {reconLoyverseHref ? (
+                <Link
+                  to={reconLoyverseHref}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-sm font-semibold text-zm-green shadow-sm transition hover:bg-zm-green/5 sm:w-auto"
+                >
+                  <Link2 className="h-4 w-4 shrink-0 text-zm-green" aria-hidden />
+                  Conciliar con Loyverse
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  title="Elegí cuenta y rango de fechas para abrir el panel"
+                  className="inline-flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-400 sm:w-auto"
+                >
+                  <Link2 className="h-4 w-4 shrink-0" aria-hidden />
+                  Conciliar con Loyverse
+                </button>
+              )}
             </div>
           </div>
       </div>

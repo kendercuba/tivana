@@ -23,6 +23,7 @@ import AccountProfile from './pages/account/Profile';
 import FinanceDashboard from './pages/admin/finance/FinanceDashboard.jsx';
 import ZmWeeklyFinancePanel from "./pages/admin/finance/ZmWeeklyFinancePanel.jsx";
 import ZmManualExpensesPage from "./pages/admin/finance/ZmManualExpensesPage.jsx";
+import ZmLoyverseBankReconciliationPage from "./pages/admin/finance/ZmLoyverseBankReconciliationPage.jsx";
 import FinanceBankHub from './pages/admin/finance/FinanceBankHub.jsx';
 import LoyverseImport from './pages/admin/finance/LoyverseImport.jsx';
 import ZonaMarketLayout from './pages/zonamarket/ZonaMarketLayout.jsx';
@@ -153,6 +154,14 @@ function App() {
         }
       />
       <Route
+        path="/admin/finance/conciliacion"
+        element={
+          <AdminLayout>
+            <ZmLoyverseBankReconciliationPage />
+          </AdminLayout>
+        }
+      />
+      <Route
         path="/admin/finance/:section"
         element={
           <AdminLayout>
@@ -196,6 +205,10 @@ function App() {
         />
         <Route path="finance/dashboard" element={<ZmWeeklyFinancePanel />} />
         <Route path="finance/gastos" element={<ZmManualExpensesPage />} />
+        <Route
+          path="finance/conciliacion"
+          element={<ZmLoyverseBankReconciliationPage />}
+        />
         <Route path="finance/loyverse" element={<LoyverseImport />} />
         <Route path="finance/:section" element={<FinanceBankHub />} />
       </Route>

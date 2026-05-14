@@ -8,6 +8,7 @@ import {
   ShoppingBasket,
   Store,
   Wallet,
+  Link2,
 } from "lucide-react";
 import { useReportingGaps } from "../../hooks/admin/finance/useReportingGaps.js";
 import ZmAdminReportingBellPanel, {
@@ -16,6 +17,7 @@ import ZmAdminReportingBellPanel, {
 
 const ZM_FINANCE_BASE = "/zonamarket/admin/finance";
 const ZM_GASTOS_PATH = `${ZM_FINANCE_BASE}/gastos`;
+const ZM_CONCILIACION_PATH = `${ZM_FINANCE_BASE}/conciliacion`;
 const LOYVERSE_PATH = `${ZM_FINANCE_BASE}/loyverse`;
 const ZM_ARTICLES_BASE = "/zonamarket/admin/articles";
 const ARTICLES_LIST_PATH = `${ZM_ARTICLES_BASE}/list`;
@@ -385,6 +387,20 @@ export default function ZonaMarketAdminLayout() {
                 <span className="drop-shadow-sm">Gastos</span>
               </NavLink>
 
+              <NavLink to={ZM_CONCILIACION_PATH} className={financePanelNavClass}>
+                <span
+                  className="inline-block w-4 shrink-0 text-center text-[10px] text-transparent select-none"
+                  aria-hidden
+                >
+                  ▸
+                </span>
+                <Link2
+                  className={cn(NAV_ICON_LG, "text-sky-300")}
+                  aria-hidden
+                />
+                <span className="drop-shadow-sm">Conciliación</span>
+              </NavLink>
+
               <div className="mt-1">
                 <button
                   type="button"
@@ -658,6 +674,24 @@ export default function ZonaMarketAdminLayout() {
                   aria-hidden
                 />
                 <span className="drop-shadow-sm">Gastos</span>
+              </NavLink>
+
+              <NavLink
+                to={ZM_CONCILIACION_PATH}
+                className={(p) => cn(financePanelNavClass(p), "mt-1")}
+                onClick={() => setFinanceFlyoutOpen(false)}
+              >
+                <span
+                  className="inline-block w-4 shrink-0 text-center text-[10px] text-transparent select-none"
+                  aria-hidden
+                >
+                  ▸
+                </span>
+                <Link2
+                  className={cn(NAV_ICON_LG, "text-sky-300")}
+                  aria-hidden
+                />
+                <span className="drop-shadow-sm">Conciliación</span>
               </NavLink>
 
               <p className="mt-3 px-2 text-xs font-bold uppercase tracking-wider text-amber-200">
