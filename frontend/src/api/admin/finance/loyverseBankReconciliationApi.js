@@ -16,7 +16,7 @@ async function parseJsonResponse(response) {
 }
 
 /**
- * @param {{ date: string, bankAccountId: number|string, paymentMethod?: string }} params
+ * @param {{ date: string, bankAccountId: number|string, paymentMethod?: string, posBatch?: string }} params
  */
 export async function fetchLoyverseBankReconciliationSnapshot(params) {
   const q = new URLSearchParams();
@@ -24,6 +24,9 @@ export async function fetchLoyverseBankReconciliationSnapshot(params) {
   q.set("bankAccountId", String(params.bankAccountId ?? ""));
   if (params.paymentMethod) {
     q.set("paymentMethod", String(params.paymentMethod));
+  }
+  if (params.posBatch != null && String(params.posBatch).trim() !== "") {
+    q.set("posBatch", String(params.posBatch).trim());
   }
   const response = await fetch(
     `${API_URL}/finance/loyverse-bank-reconciliation?${q.toString()}`,

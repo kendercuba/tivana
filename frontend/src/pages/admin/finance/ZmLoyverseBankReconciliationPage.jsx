@@ -1,9 +1,23 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import LoyversePorPagoDateRange from "../../../components/admin/finance/LoyversePorPagoDateRange.jsx";
 import { useFinanceBasePath } from "../../../contexts/FinanceBasePathContext.jsx";
 import { fetchBankAccounts } from "../../../api/admin/finance/bankApi.js";
 import { fetchLoyverseBankReconciliationSnapshot } from "../../../api/admin/finance/loyverseBankReconciliationApi.js";
+
+/** Misma clave que en LoyverseVentasTablas (lote POS por día). */
+const LOYVERSE_CARD_POS_BATCH_STORAGE_KEY = "zm_loyverse_card_pos_batch_by_date";
+
+function readPosBatchFromStorage(ymd) {
+  try {
+    const raw = localStorage.getItem(LOYVERSE_CARD_POS_BATCH_STORAGE_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    const v = map?.[ymd];
+    return typeof v === "string" ? v.trim() : "";
+  } catch {
+    return "";
+  }
+}
 
 const PAYMENT_METHOD_OPTIONS = [
   { value: "pago_movil", label: "Pago móvil" },
@@ -57,7 +71,7 @@ function matchBadgeClass(status) {
   if (status === "sin_datos") {
     return "border border-gray-200 bg-gray-50 text-gray-700";
   }
-  if (status === "sin_loyverse" || status === "sin_banco") {
+  if (status === "sin_loyverse" || status === "sin_banco" || status === "sin_lote") {
     return "border border-amber-200 bg-amber-50 text-amber-950";
   }
   return "border border-zm-green/25 bg-zm-cream text-zm-sidebar";
@@ -77,6 +91,8 @@ function matchStatusTitle(status) {
       return "Sin Loyverse";
     case "sin_banco":
       return "Sin banco";
+    case "sin_lote":
+      return "Falta lote POS";
     case "banco_sin_filtro_pm":
       return "Créditos del día";
     case "banco_bajo":
@@ -99,6 +115,8 @@ function maxYmd(a, b) {
 export default function ZmLoyverseBankReconciliationPage() {
   const financeBase = useFinanceBasePath();
   const [searchParams, setSearchParams] = useSearchParams();
+  const prevDateRef = useRef(null);
+  const prevPmRef = useRef(null);
 
   const [accounts, setAccounts] = useState([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
@@ -120,6 +138,10 @@ export default function ZmLoyverseBankReconciliationPage() {
     const ok = PAYMENT_METHOD_OPTIONS.some((o) => o.value === pm);
     return ok ? pm : "pago_movil";
   });
+
+  const [posBatch, setPosBatch] = useState(() =>
+    (searchParams.get("posBatch") || "").trim()
+  );
 
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [snapshotError, setSnapshotError] = useState(null);
@@ -177,16 +199,45 @@ export default function ZmLoyverseBankReconciliationPage() {
   }, [searchParams]);
 
   useEffect(() => {
+    if (paymentMethod !== "pos") {
+      prevDateRef.current = dateYmd;
+      prevPmRef.current = paymentMethod;
+      return;
+    }
+    const fromUrl = (searchParams.get("posBatch") || "").trim();
+    if (fromUrl) {
+      setPosBatch(fromUrl);
+      prevDateRef.current = dateYmd;
+      prevPmRef.current = paymentMethod;
+      return;
+    }
+    const isFirst = prevDateRef.current === null;
+    const dateChanged = !isFirst && prevDateRef.current !== dateYmd;
+    const switchedToPos =
+      !isFirst &&
+      prevPmRef.current !== "pos" &&
+      paymentMethod === "pos";
+    prevDateRef.current = dateYmd;
+    prevPmRef.current = paymentMethod;
+    if (isFirst || dateChanged || switchedToPos) {
+      setPosBatch(readPosBatchFromStorage(dateYmd));
+    }
+  }, [dateYmd, paymentMethod, searchParams]);
+
+  useEffect(() => {
     if (!dateYmd || bankAccountId == null) return;
     const next = new URLSearchParams();
     next.set("date", dateYmd);
     next.set("bankAccountId", String(bankAccountId));
     next.set("paymentMethod", paymentMethod);
+    if (paymentMethod === "pos" && posBatch.trim()) {
+      next.set("posBatch", posBatch.trim());
+    }
     const cur = searchParams.toString();
     if (cur !== next.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [bankAccountId, dateYmd, paymentMethod, searchParams, setSearchParams]);
+  }, [bankAccountId, dateYmd, paymentMethod, posBatch, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!dateYmd || bankAccountId == null) {
@@ -203,6 +254,7 @@ export default function ZmLoyverseBankReconciliationPage() {
           date: dateYmd,
           bankAccountId,
           paymentMethod,
+          posBatch: paymentMethod === "pos" ? posBatch : undefined,
         });
         if (!cancelled) setSnapshot(data);
       } catch (e) {
@@ -217,7 +269,7 @@ export default function ZmLoyverseBankReconciliationPage() {
     return () => {
       cancelled = true;
     };
-  }, [bankAccountId, dateYmd, paymentMethod]);
+  }, [bankAccountId, dateYmd, paymentMethod, posBatch]);
 
   function onApplyCalendarRange(startYmd, endYmd) {
     if (!startYmd || !endYmd) return;
@@ -309,7 +361,11 @@ export default function ZmLoyverseBankReconciliationPage() {
               <select
                 id="zm-recon-pm"
                 value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setPaymentMethod(v);
+                  if (v !== "pos") setPosBatch("");
+                }}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 shadow-sm outline-none transition hover:border-gray-400 focus:border-zm-green focus:ring-2 focus:ring-zm-green/30"
               >
                 {PAYMENT_METHOD_OPTIONS.map((o) => (
@@ -319,6 +375,26 @@ export default function ZmLoyverseBankReconciliationPage() {
                 ))}
               </select>
             </div>
+            {paymentMethod === "pos" ? (
+              <div className="min-w-0 w-full sm:max-w-xs">
+                <label
+                  htmlFor="zm-recon-lote"
+                  className="mb-1 block text-sm font-medium text-zm-sidebar"
+                >
+                  Lote POS (tarjeta)
+                </label>
+                <input
+                  id="zm-recon-lote"
+                  type="text"
+                  autoComplete="off"
+                  maxLength={80}
+                  value={posBatch}
+                  onChange={(e) => setPosBatch(e.target.value)}
+                  className="w-full rounded-lg border border-zm-green/35 bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm tabular-nums outline-none focus:border-zm-green focus:ring-2 focus:ring-zm-green/30"
+                  placeholder="Mismo valor que en Ventas por tipo de pago"
+                />
+              </div>
+            ) : null}
           </div>
           {accountsError && (
             <p className="mt-3 text-sm text-zm-red" role="alert">
@@ -396,17 +472,26 @@ export default function ZmLoyverseBankReconciliationPage() {
               {snapshot.match?.hint_es ? (
                 <span className="block mt-1 font-normal">{snapshot.match.hint_es}</span>
               ) : null}
-              {snapshot.match && (
+              {snapshot.match && snapshot.match.pos_lote ? (
+                <span className="mt-2 block text-xs tabular-nums text-gray-700">
+                  Diferencia Bs.: {formatBs(snapshot.match.diff_bs)}
+                </span>
+              ) : snapshot.match ? (
                 <span className="mt-2 block text-xs tabular-nums text-gray-700">
                   Conteo banco − Loyverse: {snapshot.match.diff_txn}; diferencia Bs.:{" "}
                   {formatBs(snapshot.match.diff_bs)}
                 </span>
-              )}
+              ) : null}
             </div>
 
             <section className="rounded-xl border border-zm-green/20 bg-white p-3 shadow-sm sm:p-4">
               <h2 className="text-sm font-semibold text-zm-sidebar">
-                Movimientos banco (día seleccionado)
+                {snapshot.bank_query?.mode === "pos_lote" &&
+                snapshot.bank_query?.pos_batch
+                  ? `Movimientos banco (lote «${snapshot.bank_query.pos_batch}», hasta ${snapshot.bank_query.window_days ?? 6} días desde la fecha de negocio)`
+                  : snapshot.bank_query?.mode === "pos_lote_pending"
+                    ? `Movimientos banco (indicá el lote; hasta ${snapshot.bank_query.window_days ?? 6} días desde la fecha de negocio)`
+                    : "Movimientos banco (día seleccionado)"}
               </h2>
               <div className="mt-3 max-h-[min(65vh,36rem)] sm:max-h-[min(70vh,42rem)] overflow-y-auto overflow-x-auto border border-zm-green/15 rounded-lg bg-white shadow-sm [-webkit-overflow-scrolling:touch]">
                 <table className="min-w-[920px] w-full text-sm border-collapse">

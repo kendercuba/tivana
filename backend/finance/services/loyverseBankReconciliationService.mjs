@@ -70,8 +70,49 @@ async function bankPagoMovilCredits(bankAccountId, businessDate) {
 }
 
 /**
- * Generic credits on account for day (used when payment method is not pago_movil).
+ * Generic credits on account for one calendar day (efectivo / zelle).
  */
+const POS_BATCH_MAX_LEN = 80;
+const POS_LOTE_WINDOW_DAYS = 6;
+
+/**
+ * POS settlement lines: match by batch number in reference/description and a date
+ * window from business day (weekend sales often post Monday or later).
+ */
+async function bankPosCreditsByLote(bankAccountId, businessDate, posBatchRaw) {
+  const needle = String(posBatchRaw || "").trim();
+  if (!needle || needle.length > POS_BATCH_MAX_LEN) {
+    return [];
+  }
+  const needleLower = needle.toLowerCase();
+  const { rows } = await pool.query(
+    `
+    SELECT
+      m.id,
+      (m.movement_date)::date::text AS movement_date,
+      m.reference,
+      m.description,
+      m.transaction_code,
+      m.operation_type,
+      m.credit_bs::numeric AS credit_bs,
+      m.debit_bs::numeric AS debit_bs,
+      m.category
+    FROM finance_bank_movements m
+    WHERE m.bank_account_id = $1
+      AND (m.movement_date)::date >= $2::date
+      AND (m.movement_date)::date <= ($2::date + ($3::int * INTERVAL '1 day'))::date
+      AND COALESCE(m.credit_bs, 0)::numeric > 0
+      AND (
+        POSITION($4::text IN LOWER(COALESCE(m.reference, ''))) > 0
+        OR POSITION($4::text IN LOWER(COALESCE(m.description, ''))) > 0
+      )
+    ORDER BY m.movement_date ASC, m.id ASC
+    `,
+    [bankAccountId, businessDate, POS_LOTE_WINDOW_DAYS, needleLower]
+  );
+  return rows;
+}
+
 async function bankAllCredits(bankAccountId, businessDate) {
   const { rows } = await pool.query(
     `
@@ -102,6 +143,7 @@ function computeMatchStatus({
   loyBs,
   bankCount,
   bankSum,
+  posLoteMode,
 }) {
   const out = {
     status: "revisar",
@@ -109,6 +151,7 @@ function computeMatchStatus({
       "Compará conteos y totales; los clientes suelen redondear y el banco puede sumar un poco más que Loyverse.",
     diff_txn: bankCount - loyTxn,
     diff_bs: Number((bankSum - loyBs).toFixed(2)),
+    pos_lote: Boolean(posLoteMode),
   };
 
   if (loyTxn === 0 && bankCount === 0) {
@@ -124,8 +167,38 @@ function computeMatchStatus({
   }
   if (bankCount === 0) {
     out.status = "sin_banco";
+    out.hint_es = posLoteMode
+      ? "No hay abonos con ese lote en referencia o descripción dentro de la ventana de fechas. Revisá el número o el extracto."
+      : "No hay abonos en banco que coincidan con el filtro del día. Revisá la cuenta o el extracto.";
+    return out;
+  }
+
+  const epsLow = Math.max(8, 0.003 * loyBs);
+  const epsHigh = Math.max(40, 0.025 * loyBs);
+  const sumOk = bankSum >= loyBs - epsLow && bankSum <= loyBs + epsHigh;
+
+  if (posLoteMode) {
+    if (sumOk) {
+      out.status = "ok";
+      out.hint_es =
+        "Total bancario (filas con el lote en referencia o descripción) alineado con Loyverse; en POS suele haber una liquidación vs varias transacciones.";
+      return out;
+    }
+    if (bankSum < loyBs - epsLow) {
+      out.status = "banco_bajo";
+      out.hint_es =
+        "Con ese lote el banco suma menos que Loyverse: verificá el número o si falta otra línea.";
+      return out;
+    }
+    if (bankSum > loyBs + epsHigh) {
+      out.status = "banco_alto";
+      out.hint_es =
+        "Con ese lote el banco suma bastante más que Loyverse; revisá duplicados o importaciones.";
+      return out;
+    }
+    out.status = "ok_sobre";
     out.hint_es =
-      "No hay abonos en banco que coincidan con el filtro del día. Revisá la cuenta o el extracto.";
+      "El banco suma algo más que Loyverse con el mismo lote (redondeo o comisiones).";
     return out;
   }
 
@@ -136,10 +209,6 @@ function computeMatchStatus({
     return out;
   }
 
-  const epsLow = Math.max(8, 0.003 * loyBs);
-  const epsHigh = Math.max(40, 0.025 * loyBs);
-
-  const sumOk = bankSum >= loyBs - epsLow && bankSum <= loyBs + epsHigh;
   const countOk = bankCount === loyTxn;
 
   if (countOk && sumOk) {
@@ -180,6 +249,7 @@ export async function getLoyverseBankReconciliationSnapshot({
   businessDate,
   bankAccountId,
   paymentMethod,
+  posBatch,
 }) {
   const d = String(businessDate || "").slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
@@ -190,16 +260,35 @@ export async function getLoyverseBankReconciliationSnapshot({
     throw new Error("Cuenta bancaria obligatoria.");
   }
   const pm = clampPaymentMethod(paymentMethod);
+  const batchTrim = String(posBatch || "").trim().slice(0, POS_BATCH_MAX_LEN);
 
   const lv = await loyversePaymentAggregate(d, pm);
   const loyTxn = Number(lv.txn_count || 0);
   const loyGrossUsd = Number(lv.gross_sales_usd || 0);
   const loyBs = Number(lv.importe_pago_bs || 0);
 
-  const movements =
-    pm === "pago_movil"
-      ? await bankPagoMovilCredits(bid, d)
-      : await bankAllCredits(bid, d);
+  let movements = [];
+  let bankQuery = { mode: "all_credits_day", window_days: 0 };
+
+  if (pm === "pos") {
+    if (!batchTrim) {
+      movements = [];
+      bankQuery = { mode: "pos_lote_pending", window_days: POS_LOTE_WINDOW_DAYS };
+    } else {
+      movements = await bankPosCreditsByLote(bid, d, batchTrim);
+      bankQuery = {
+        mode: "pos_lote",
+        window_days: POS_LOTE_WINDOW_DAYS,
+        pos_batch: batchTrim,
+      };
+    }
+  } else if (pm === "pago_movil") {
+    movements = await bankPagoMovilCredits(bid, d);
+    bankQuery = { mode: "pago_movil_day", window_days: 0 };
+  } else {
+    movements = await bankAllCredits(bid, d);
+    bankQuery = { mode: "all_credits_day", window_days: 0 };
+  }
 
   const bankCount = movements.length;
   const bankSum = movements.reduce(
@@ -213,19 +302,33 @@ export async function getLoyverseBankReconciliationSnapshot({
   );
   const bankAccountName = accRows[0]?.name || null;
 
-  const match = computeMatchStatus({
-    paymentMethod: pm,
-    loyTxn,
-    loyBs,
-    bankCount,
-    bankSum,
-  });
+  let match;
+  if (pm === "pos" && !batchTrim) {
+    match = {
+      status: "sin_lote",
+      hint_es:
+        "Para tarjeta (POS) indicá el número de lote del día (el mismo que en Ventas por tipo de pago); el banco lo repite en referencia o descripción y puede liquidar después del fin de semana.",
+      diff_txn: 0 - loyTxn,
+      diff_bs: Number((0 - loyBs).toFixed(2)),
+      pos_lote: true,
+    };
+  } else {
+    match = computeMatchStatus({
+      paymentMethod: pm,
+      loyTxn,
+      loyBs,
+      bankCount,
+      bankSum,
+      posLoteMode: pm === "pos" && Boolean(batchTrim),
+    });
+  }
 
   return {
     business_date: d,
     payment_method: pm,
     bank_account_id: bid,
     bank_account_name: bankAccountName,
+    bank_query: bankQuery,
     loyverse: {
       txn_count: loyTxn,
       gross_sales_usd: loyGrossUsd,

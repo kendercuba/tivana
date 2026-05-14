@@ -9,6 +9,7 @@ router.get("/", async (req, res) => {
       businessDate: req.query.date || req.query.businessDate,
       bankAccountId: req.query.bankAccountId,
       paymentMethod: req.query.paymentMethod,
+      posBatch: req.query.posBatch,
     });
     return res.json({ success: true, data });
   } catch (error) {

@@ -1832,17 +1832,28 @@ export function LoyverseVentasPorPago({
                               <div className="min-w-0 shrink">
                                 <PaymentMethodWithIcon paymentMethod={r.payment_method} />
                               </div>
-                              {String(r.payment_method || "").toLowerCase() === "pago_movil" ? (
-                                <Link
-                                  to={`${financeBase}/conciliacion?${new URLSearchParams({
-                                    date: day.dateYmd,
-                                    paymentMethod: "pago_movil",
-                                  }).toString()}`}
-                                  className="shrink-0 text-xs font-semibold text-zm-green hover:underline"
-                                >
-                                  Conciliar
-                                </Link>
-                              ) : null}
+                              {(() => {
+                                const pm = String(r.payment_method || "").toLowerCase();
+                                if (pm !== "pago_movil" && pm !== "pos") return null;
+                                const q = new URLSearchParams({
+                                  date: day.dateYmd,
+                                  paymentMethod: pm,
+                                });
+                                if (pm === "pos") {
+                                  const lot = String(
+                                    posBatchByDate[day.dateYmd] ?? ""
+                                  ).trim();
+                                  if (lot) q.set("posBatch", lot);
+                                }
+                                return (
+                                  <Link
+                                    to={`${financeBase}/conciliacion?${q.toString()}`}
+                                    className="shrink-0 text-xs font-semibold text-zm-green hover:underline"
+                                  >
+                                    Conciliar
+                                  </Link>
+                                );
+                              })()}
                             </div>
                           </td>
                           <td className="px-1.5 py-2 sm:px-2 align-middle text-right">
