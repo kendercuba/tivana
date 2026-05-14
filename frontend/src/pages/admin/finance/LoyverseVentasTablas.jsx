@@ -62,6 +62,80 @@ function formatQtySold(value) {
   }).format(n);
 }
 
+/**
+ * Misma carga que en la pestaña de tabla: import desde «Historial de cargas»
+ * sin cambiar el rango del calendario (el resaltado indica el lote nuevo).
+ */
+function LoyverseHistoryTabUploadForm({
+  onSubmit,
+  onFilesSelected,
+  uploadInputKey,
+  uploadFiles,
+  importLoading,
+  fileHintValidating,
+  fileHintError,
+  importError,
+  fileInputAriaLabel,
+  formClassName = "flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto sm:ml-auto sm:justify-end",
+}) {
+  return (
+    <section className="rounded-xl border border-zm-green/20 bg-white p-3 sm:p-4 shadow-sm space-y-2">
+      <form onSubmit={onSubmit} className={formClassName}>
+        <label
+          className={`cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40 ${
+            fileHintValidating ? "pointer-events-none opacity-60" : ""
+          }`}
+        >
+          <Upload
+            className="h-4 w-4 shrink-0 opacity-90"
+            aria-hidden
+            strokeWidth={2.25}
+          />
+          <span>Seleccionar archivo(s)</span>
+          <input
+            key={uploadInputKey}
+            type="file"
+            multiple
+            accept={LOYVERSE_UPLOAD_ACCEPT}
+            className="sr-only"
+            aria-label={fileInputAriaLabel}
+            disabled={fileHintValidating}
+            onChange={onFilesSelected}
+          />
+        </label>
+        {uploadFiles.length > 0 && (
+          <>
+            <span
+              className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
+              title={uploadFiles.map((f) => f.name).join("\n")}
+            >
+              {uploadFiles.length === 1
+                ? uploadFiles[0].name
+                : `${uploadFiles.length} archivos seleccionados`}
+            </span>
+            <button
+              type="submit"
+              disabled={importLoading || fileHintValidating}
+              className="shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50"
+            >
+              {importLoading ? "Importando…" : "Importar"}
+            </button>
+          </>
+        )}
+      </form>
+      {importError && <p className="text-sm text-zm-red">{importError}</p>}
+      {fileHintValidating && (
+        <p className="text-xs text-gray-600">Validando archivos…</p>
+      )}
+      {fileHintError && (
+        <p className="text-sm text-zm-red" role="alert">
+          {fileHintError}
+        </p>
+      )}
+    </section>
+  );
+}
+
 /** Costos netos (USD) = ventas netas − beneficio bruto. */
 function costosNetosUsd(row) {
   const net = row.net_sales != null ? Number(row.net_sales) : NaN;
@@ -108,34 +182,6 @@ function minYmd(a, b) {
 function maxYmd(a, b) {
   if (!a || !b) return a || b || "";
   return a >= b ? a : b;
-}
-
-/**
- * Focus calendar on imported batch dates after refresh; fallback to full data span.
- * @param {Array<{ business_date?: string, import_batch_id?: unknown }>} rows
- * @param {number|string} batchId
- * @returns {{ start: string, end: string } | null}
- */
-function dateRangeForImportedLoyverseBatch(rows, batchId) {
-  const bid = Number(batchId);
-  if (!Number.isFinite(bid)) return null;
-  const batchDates = rows
-    .filter((r) => Number(r.import_batch_id) === bid)
-    .map((r) => String(r.business_date || "").slice(0, 10))
-    .filter(Boolean)
-    .sort();
-  if (batchDates.length > 0) {
-    return { start: batchDates[0], end: batchDates[batchDates.length - 1] };
-  }
-  const all = [
-    ...new Set(rows.map((r) => String(r.business_date || "").slice(0, 10))),
-  ]
-    .filter(Boolean)
-    .sort();
-  if (all.length > 0) {
-    return { start: all[0], end: all[all.length - 1] };
-  }
-  return null;
 }
 
 /** Etiqueta como en Loyverse / Excel (Tarjeta, Pago Móvil, Efectivo). */
@@ -480,21 +526,7 @@ export function LoyverseResumenVentas({
     setHistoryRefresh((n) => n + 1);
     setUploadFiles([]);
     setUploadInputKey((k) => k + 1);
-
-    let cancelled = false;
-    void (async () => {
-      const data = await refreshFacts();
-      if (cancelled || !data) return;
-      const span = dateRangeForImportedLoyverseBatch(data, batchId);
-      if (span) {
-        setRangeStart(span.start);
-        setRangeEnd(span.end);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    void refreshFacts();
   }, [
     importResult?.data?.importBatchId,
     importResult?.success,
@@ -791,12 +823,26 @@ export function LoyverseResumenVentas({
       </div>
 
       {topTab === "historial" ? (
-        <LoyverseImportBatchHistory
-          detectedFormatFilter="daily_summary"
-          refreshToken={historyRefresh}
-          preferredSelectBatchId={importResult?.data?.importBatchId ?? null}
-          onDeleted={() => void refreshFacts()}
-        />
+        <div className="px-4 pb-6 pt-1 space-y-3">
+          <LoyverseHistoryTabUploadForm
+            onSubmit={handleResumenExcelSubmit}
+            onFilesSelected={handleResumenFileSelected}
+            uploadInputKey={uploadInputKey}
+            uploadFiles={uploadFiles}
+            importLoading={importLoading}
+            fileHintValidating={fileHintValidating}
+            fileHintError={fileHintError}
+            importError={importError}
+            fileInputAriaLabel="Seleccionar uno o varios archivos del reporte Resumen de ventas Loyverse"
+            formClassName="flex flex-wrap items-center gap-2 min-w-0"
+          />
+          <LoyverseImportBatchHistory
+            detectedFormatFilter="daily_summary"
+            refreshToken={historyRefresh}
+            preferredSelectBatchId={importResult?.data?.importBatchId ?? null}
+            onDeleted={() => void refreshFacts()}
+          />
+        </div>
       ) : (
         <>
           {err && (
@@ -1180,21 +1226,7 @@ export function LoyverseVentasPorPago({
     setHistoryRefresh((n) => n + 1);
     setUploadFiles([]);
     setUploadInputKey((k) => k + 1);
-
-    let cancelled = false;
-    void (async () => {
-      const data = await refreshFacts();
-      if (cancelled || !data) return;
-      const span = dateRangeForImportedLoyverseBatch(data, batchId);
-      if (span) {
-        setRangeStart(span.start);
-        setRangeEnd(span.end);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    void refreshFacts();
   }, [
     importResult?.data?.importBatchId,
     importResult?.success,
@@ -1545,7 +1577,19 @@ export function LoyverseVentasPorPago({
       </div>
 
       {topTab === "historial" ? (
-        <div className="w-full max-w-[1600px] px-4 sm:px-6 pb-8 pt-1">
+        <div className="w-full max-w-[1600px] px-4 sm:px-6 pb-8 pt-1 space-y-3">
+          <LoyverseHistoryTabUploadForm
+            onSubmit={handlePagoExcelSubmit}
+            onFilesSelected={handlePagoFileSelected}
+            uploadInputKey={uploadInputKey}
+            uploadFiles={uploadFiles}
+            importLoading={importLoading}
+            fileHintValidating={fileHintValidating}
+            fileHintError={fileHintError}
+            importError={importError}
+            fileInputAriaLabel="Seleccionar uno o varios archivos del reporte Ventas por tipo de pago Loyverse"
+            formClassName="flex flex-wrap items-center gap-2 min-w-0"
+          />
           <LoyverseImportBatchHistory
             detectedFormatFilter="by_payment"
             refreshToken={historyRefresh}
@@ -2060,21 +2104,7 @@ export function LoyverseVentasPorArticulo({
     setHistoryRefresh((n) => n + 1);
     setUploadFiles([]);
     setUploadInputKey((k) => k + 1);
-
-    let cancelled = false;
-    void (async () => {
-      const data = await refreshFacts();
-      if (cancelled || !data) return;
-      const span = dateRangeForImportedLoyverseBatch(data, batchId);
-      if (span) {
-        setRangeStart(span.start);
-        setRangeEnd(span.end);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    void refreshFacts();
   }, [
     importResult?.data?.importBatchId,
     importResult?.success,
@@ -2360,7 +2390,19 @@ export function LoyverseVentasPorArticulo({
       </div>
 
       {topTab === "historial" ? (
-        <div className="w-full max-w-[1600px] px-4 sm:px-6 pb-8 pt-1">
+        <div className="w-full max-w-[1600px] px-4 sm:px-6 pb-8 pt-1 space-y-3">
+          <LoyverseHistoryTabUploadForm
+            onSubmit={handleArticuloExcelSubmit}
+            onFilesSelected={handleArticuloFileSelected}
+            uploadInputKey={uploadInputKey}
+            uploadFiles={uploadFiles}
+            importLoading={importLoading}
+            fileHintValidating={fileHintValidating}
+            fileHintError={fileHintError}
+            importError={importError}
+            fileInputAriaLabel="Seleccionar uno o varios archivos del reporte Ventas por artículo Loyverse"
+            formClassName="flex flex-wrap items-center gap-2 min-w-0"
+          />
           <LoyverseImportBatchHistory
             detectedFormatFilter="by_item"
             refreshToken={historyRefresh}

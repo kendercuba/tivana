@@ -288,23 +288,157 @@ function workbookRequiresItemFilenameRule(workbook, reportHint) {
   return false;
 }
 
+/**
+ * Loyverse «Resumen de ventas»: columnas brutas / netas / beneficio.
+ * En Excel a veces la columna llega truncada («Beneficio br»).
+ */
+function joinedHeaderMatchesDailySummaryMetricPattern(joined) {
+  const hasVentasBrutas =
+    /\bventas?\s+brutas?\b/.test(joined) || /\bgross\s+sales\b/i.test(joined);
+  const hasVentasNetas =
+    /\bventas?\s+netas?\b/.test(joined) ||
+    /\bventa\s+neta\b/.test(joined) ||
+    /\bnet\s+sales\b/i.test(joined);
+  const hasBeneficio =
+    /\bbeneficio\s+bruto\b/.test(joined) ||
+    /\bbeneficio\s+br\b/.test(joined) ||
+    /\butilidad\s+bruta\b/.test(joined) ||
+    /\bgross\s+profit\b/i.test(joined);
+  return hasVentasBrutas && hasVentasNetas && hasBeneficio;
+}
+
+/**
+ * Export de un solo día: Loyverse suele poner «Tiempo» (hora) en vez de «Fecha».
+ * El nombre del archivo debe indicar un único día (p. ej. …-2026-05-13-2026-05-13).
+ */
+function isLoyverseHourlyDailySummaryBreakdown(headerLine, sourceFileName) {
+  if (!/\btiempo\b|\btime\b|\bhora\b/i.test(headerLine)) return false;
+  if (/\b(fecha|date)\b/i.test(headerLine)) return false;
+  return Boolean(inferBusinessDateFromPaymentFilename(sourceFileName));
+}
+
+function skipLoyverseHourlySubtotalOrLabelRow(raw) {
+  const label = pickText(raw, ["tiempo", "time", "hora", "hour"]);
+  if (!label || !String(label).trim()) return false;
+  const t = normalizeHeader(label);
+  return /\b(total|subtotal|suma)\b/.test(t);
+}
+
+/**
+ * Suma todas las filas por hora en un solo hecho `daily_summary` para el día del nombre de archivo.
+ * El margen % se recalcula a partir de totales (no se suman porcentajes hora a hora).
+ */
+function aggregateHourlyDailySummaryRows(dataRows, sheetName, businessDate) {
+  const grossKeys = [
+    "gross sales",
+    "ventas brutas",
+    "venta bruta",
+    "total sales",
+  ];
+  const netKeys = [
+    "net sales",
+    "ventas netas",
+    "venta neta",
+    "net sales (tax inclusive)",
+    "net sales (tax excluded)",
+    "neto",
+  ];
+  const profitKeys = [
+    "gross profit",
+    "beneficio bruto",
+    "beneficio br",
+    "utilidad bruta",
+    "profit",
+  ];
+  const costKeys = [
+    "cost of goods",
+    "costo de los",
+    "costo de los bienes",
+    "costo",
+    "cogs",
+  ];
+  const receiptKeys = [
+    "receipts",
+    "recibos",
+    "transactions",
+    "transacciones",
+    "tickets",
+  ];
+
+  let gross = 0;
+  let net = 0;
+  let profit = 0;
+  let refunds = 0;
+  let discounts = 0;
+  let taxes = 0;
+  let cost = 0;
+  let receipts = 0;
+  let sawNumeric = false;
+  let receiptsAny = false;
+  let usedRows = 0;
+
+  for (const raw of dataRows) {
+    if (skipLoyverseHourlySubtotalOrLabelRow(raw)) continue;
+    usedRows += 1;
+    const add = (acc, n) => {
+      if (n == null || !Number.isFinite(n)) return acc;
+      sawNumeric = true;
+      return acc + n;
+    };
+
+    gross = add(gross, pickNumber(raw, grossKeys));
+    net = add(net, pickNumber(raw, netKeys));
+    profit = add(profit, pickNumber(raw, profitKeys));
+    refunds = add(refunds, pickNumber(raw, ["refunds", "reembolsos", "reembolso", "devoluciones"]));
+    discounts = add(discounts, pickNumber(raw, ["discounts", "descuentos", "descuento"]));
+    taxes = add(taxes, pickNumber(raw, ["taxes", "impuestos", "impuesto", "tax"]));
+    cost = add(cost, pickNumber(raw, costKeys));
+
+    const rc = pickInt(raw, receiptKeys);
+    if (rc != null) {
+      receipts += rc;
+      receiptsAny = true;
+    }
+  }
+
+  if (!sawNumeric && usedRows === 0) return null;
+
+  const marginPct =
+    net !== 0 && Number.isFinite(net) && Number.isFinite(profit)
+      ? (profit / net) * 100
+      : null;
+
+  return {
+    fact_type: "daily_summary",
+    business_date: businessDate,
+    payment_method: null,
+    item_name: null,
+    sku: null,
+    qty_sold: null,
+    gross_sales: sawNumeric ? gross : null,
+    net_sales: sawNumeric ? net : null,
+    gross_profit: sawNumeric ? profit : null,
+    refunds: sawNumeric ? refunds : null,
+    discounts: sawNumeric ? discounts : null,
+    taxes: sawNumeric ? taxes : null,
+    margin_pct: marginPct != null && Number.isFinite(marginPct) ? marginPct : null,
+    cost_goods: sawNumeric ? cost : null,
+    transactions_count: receiptsAny ? receipts : null,
+    sheet_name: sheetName,
+    raw_row: {
+      _aggregated_from_hourly: true,
+      _hourly_row_count: dataRows.length,
+      _hourly_rows_used: usedRows,
+    },
+  };
+}
+
 /** Reglas explícitas por cabeceras Loyverse (ES), antes del detector genérico. */
 function classifyLoyverseReportFromHeaders(headers, sheetName) {
   const h = headers.filter(Boolean).join(" ");
   const sn = normalizeHeader(sheetName);
 
-  const hasVentasBrutas =
-    /\bventas?\s+brutas?\b/.test(h) || /\bgross\s+sales\b/i.test(h);
-  const hasVentasNetas =
-    /\bventas?\s+netas?\b/.test(h) ||
-    /\bventa\s+neta\b/.test(h) ||
-    /\bnet\s+sales\b/i.test(h);
-  const hasBeneficioBruto =
-    /\bbeneficio\s+bruto\b/.test(h) ||
-    /\butilidad\s+bruta\b/.test(h) ||
-    /\bgross\s+profit\b/i.test(h);
-
-  if (hasVentasBrutas && hasVentasNetas && hasBeneficioBruto) {
+  if (joinedHeaderMatchesDailySummaryMetricPattern(h)) {
     const hasDayColumn = /\b(fecha|date|dia|día)\b/.test(h);
     const hasArticulosVendidos =
       /\barticulos?\s+vendidos\b/.test(h) || /\bsold\s+quantity\b/i.test(h);
@@ -360,8 +494,22 @@ function parseSheetRows(
   }
 
   if (format === "daily_summary") {
+    const headerLine = headers.filter(Boolean).join(" ");
+    const singleDayYmd = inferBusinessDateFromPaymentFilename(sourceFileName);
+    if (
+      singleDayYmd &&
+      isLoyverseHourlyDailySummaryBreakdown(headerLine, sourceFileName) &&
+      dataRows.length > 0
+    ) {
+      const one = aggregateHourlyDailySummaryRows(
+        dataRows,
+        sheetName,
+        singleDayYmd
+      );
+      return one ? [one] : [];
+    }
     return dataRows
-      .map((r) => mapDailySummaryRow(r, sheetName))
+      .map((r) => mapDailySummaryRow(r, sheetName, sourceFileName))
       .filter(Boolean);
   }
 
@@ -399,6 +547,9 @@ function findHeaderRowIndex(rows) {
       /(monto|amount|importe|transacci)/i.test(joined);
     if (paymentTypeReport && hasSales) return i;
     if (itemSalesHeader && hasSales) return i;
+    if (joinedHeaderMatchesDailySummaryMetricPattern(joined) && !itemSalesHeader) {
+      return i;
+    }
     if (hasDate && hasSales) return i;
   }
   return -1;
@@ -433,7 +584,7 @@ function detectFormat(headers, sheetName) {
 
   if (
     /(net sales|ventas netas|venta neta)/.test(h) ||
-    /(gross profit|beneficio bruto|utilidad bruta)/.test(h) ||
+    /(gross profit|beneficio bruto|beneficio br|utilidad bruta)/.test(h) ||
     /resumen|summary/.test(sn)
   ) {
     return "daily_summary";
@@ -442,14 +593,17 @@ function detectFormat(headers, sheetName) {
   return "daily_summary";
 }
 
-function mapDailySummaryRow(raw, sheetName) {
-  const businessDate = pickDate(raw, [
+function mapDailySummaryRow(raw, sheetName, sourceFileName = "") {
+  let businessDate = pickDate(raw, [
     "date",
     "fecha",
     "día",
     "dia",
     "day",
   ]);
+  if (!businessDate) {
+    businessDate = inferBusinessDateFromPaymentFilename(sourceFileName);
+  }
   if (!businessDate) return null;
 
   const netSales = pickNumber(raw, [
@@ -471,6 +625,7 @@ function mapDailySummaryRow(raw, sheetName) {
   const grossProfit = pickNumber(raw, [
     "gross profit",
     "beneficio bruto",
+    "beneficio br",
     "utilidad bruta",
     "profit",
   ]);
@@ -547,8 +702,10 @@ function mapDailySummaryRow(raw, sheetName) {
 }
 
 /**
- * Single business date for payment-type rows without a Fecha column.
- * Call only after `validatePaymentReportFilenameForImport` passed (at most one distinct date in basename).
+ * Single calendar day from basename (YYYY-MM-DD or D/M/YYYY).
+ * Used for payment/item rows without Fecha, daily summary without Fecha, and hourly daily exports
+ * when the filename encodes one day (e.g. sales-summary-2026-05-13-2026-05-13).
+ * Returns null when the name encodes more than one distinct calendar day (range export).
  */
 function inferBusinessDateFromPaymentFilename(name) {
   if (!name) return null;
