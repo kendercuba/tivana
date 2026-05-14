@@ -32,18 +32,6 @@ function maxYmd(a, b) {
   return a >= b ? a : b;
 }
 
-function addDaysYmd(ymdStr, deltaDays) {
-  const d = new Date(`${ymdStr}T12:00:00`);
-  d.setDate(d.getDate() + deltaDays);
-  return d.toISOString().slice(0, 10);
-}
-
-function daysInclusive(rangeStart, rangeEnd) {
-  const a = new Date(`${rangeStart}T12:00:00`);
-  const b = new Date(`${rangeEnd}T12:00:00`);
-  return Math.max(1, Math.round((b - a) / 86400000) + 1);
-}
-
 function formatUsd(value) {
   if (value == null || value === "") return "—";
   const n = Number(value);
@@ -71,20 +59,6 @@ function quantityMeasureLabel(articleSoldByWeight) {
   if (articleSoldByWeight === true) return "kg";
   if (articleSoldByWeight === false) return "ud";
   return "—";
-}
-
-function dateRangeForImportedPoBatch(rows, batchId) {
-  const bid = Number(batchId);
-  if (!Number.isFinite(bid)) return null;
-  const batchDates = rows
-    .filter((r) => Number(r.import_batch_id) === bid)
-    .map((r) => String(r.business_date || "").slice(0, 10))
-    .filter(Boolean)
-    .sort();
-  if (batchDates.length > 0) {
-    return { start: batchDates[0], end: batchDates[batchDates.length - 1] };
-  }
-  return null;
 }
 
 /**
@@ -197,13 +171,11 @@ export default function ZmPurchaseOrders({
 
     let cancelled = false;
     void (async () => {
-      await loadMetaBounds();
-      const data = await refreshLines();
-      if (cancelled || !data) return;
-      const span = dateRangeForImportedPoBatch(data, batchId);
-      if (span) {
-        setRangeStart(span.start);
-        setRangeEnd(span.end);
+      const bounds = await loadMetaBounds();
+      if (cancelled) return;
+      if (bounds.min && bounds.max) {
+        setRangeStart(bounds.min);
+        setRangeEnd(bounds.max);
       }
     })();
 
@@ -215,15 +187,7 @@ export default function ZmPurchaseOrders({
     importResult?.success,
     loadMetaBounds,
     onHighlightBatchIdChange,
-    refreshLines,
   ]);
-
-  function shiftRange(direction) {
-    if (!rangeStart || !rangeEnd) return;
-    const step = daysInclusive(rangeStart, rangeEnd);
-    setRangeStart(addDaysYmd(rangeStart, direction * step));
-    setRangeEnd(addDaysYmd(rangeEnd, direction * step));
-  }
 
   async function handleFileSelected(e) {
     const picked = filesFromFileList(e.target.files);
@@ -250,18 +214,11 @@ export default function ZmPurchaseOrders({
       setFileHintError(err.message || "No se pudo validar el archivo.");
       setUploadFiles([]);
       setUploadInputKey((k) => k + 1);
+      return;
     } finally {
       setFileHintValidating(false);
     }
-  }
-
-  function handleSubmitImport(e) {
-    e.preventDefault();
-    if (uploadFiles.length === 0) {
-      window.alert("Selecciona uno o varios archivos CSV o Excel.");
-      return;
-    }
-    handleImport({ files: uploadFiles });
+    await handleImport({ files: picked });
   }
 
   const filteredRows = useMemo(() => {
@@ -336,15 +293,6 @@ export default function ZmPurchaseOrders({
 
             <section className="rounded-xl border border-zm-green/20 bg-white p-3 sm:p-4 shadow-sm space-y-3">
               <div className="flex flex-wrap items-center gap-2 min-w-0">
-                <button
-                  type="button"
-                  className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
-                  title="Periodo anterior"
-                  aria-label="Periodo anterior"
-                  onClick={() => shiftRange(-1)}
-                >
-                  ‹
-                </button>
                 <LoyversePorPagoDateRange
                   rangeStart={rangeStart}
                   rangeEnd={rangeEnd}
@@ -355,23 +303,13 @@ export default function ZmPurchaseOrders({
                     setRangeEnd(endYmd);
                   }}
                 />
-                <button
-                  type="button"
-                  className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
-                  title="Periodo siguiente"
-                  aria-label="Periodo siguiente"
-                  onClick={() => shiftRange(1)}
-                >
-                  ›
-                </button>
 
-                <form
-                  onSubmit={handleSubmitImport}
-                  className="flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto sm:ml-auto sm:justify-end"
-                >
+                <div className="flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto sm:ml-auto sm:justify-end">
                   <label
                     className={`cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40 ${
-                      fileHintValidating ? "pointer-events-none opacity-60" : ""
+                      fileHintValidating || importLoading
+                        ? "pointer-events-none opacity-60"
+                        : ""
                     }`}
                   >
                     <Upload
@@ -387,7 +325,7 @@ export default function ZmPurchaseOrders({
                       accept={ZM_PO_UPLOAD_ACCEPT}
                       className="sr-only"
                       aria-label="Seleccionar uno o varios archivos CSV o Excel de órdenes de compra"
-                      disabled={fileHintValidating}
+                      disabled={fileHintValidating || importLoading}
                       onChange={handleFileSelected}
                     />
                   </label>
@@ -401,22 +339,7 @@ export default function ZmPurchaseOrders({
                         : `${uploadFiles.length} archivos seleccionados`}
                     </span>
                   )}
-                  <button
-                    type="submit"
-                    disabled={
-                      importLoading ||
-                      fileHintValidating ||
-                      uploadFiles.length === 0
-                    }
-                    className="shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50"
-                  >
-                    {importLoading
-                      ? "Importando…"
-                      : fileHintValidating
-                        ? "Validando archivos…"
-                        : "Importar"}
-                  </button>
-                </form>
+                </div>
               </div>
               {fileHintError && (
                 <p className="text-sm text-zm-red">{fileHintError}</p>

@@ -36,7 +36,7 @@ async function loyversePaymentAggregate(businessDate, paymentMethod) {
 }
 
 /**
- * Bank credits that look like Pago Móvil income for BNC-style extracts.
+ * Bank credits that look like Pago Móvil income (abonos / códigos BNC-style y texto).
  */
 async function bankPagoMovilCredits(bankAccountId, businessDate) {
   const { rows } = await pool.query(
@@ -47,20 +47,41 @@ async function bankPagoMovilCredits(bankAccountId, businessDate) {
       m.reference,
       m.description,
       m.transaction_code,
+      m.transaction_type,
       m.operation_type,
       m.credit_bs::numeric AS credit_bs,
       m.debit_bs::numeric AS debit_bs,
-      m.category
+      m.category,
+      m.subcategory
     FROM finance_bank_movements m
     WHERE m.bank_account_id = $1
       AND (m.movement_date)::date = $2::date
       AND COALESCE(m.credit_bs, 0)::numeric > 0
       AND (
-        TRIM(COALESCE(m.transaction_code, '')) = '388'
+        TRIM(COALESCE(m.transaction_code, '')) IN ('388')
         OR LOWER(COALESCE(m.operation_type, '')) LIKE '%pago movil%'
         OR LOWER(COALESCE(m.operation_type, '')) LIKE '%pago móvil%'
         OR LOWER(COALESCE(m.description, '')) LIKE '%pago movil%'
         OR LOWER(COALESCE(m.description, '')) LIKE '%pago móvil%'
+        OR LOWER(COALESCE(m.reference, '')) LIKE '%pago movil%'
+        OR LOWER(COALESCE(m.reference, '')) LIKE '%pago móvil%'
+        OR LOWER(COALESCE(m.subcategory, '')) LIKE '%pago movil%'
+        OR LOWER(COALESCE(m.subcategory, '')) LIKE '%pago móvil%'
+        OR (
+          (
+            LOWER(COALESCE(m.transaction_type, '')) LIKE '%abono%'
+            OR LOWER(COALESCE(m.operation_type, '')) LIKE '%abono%'
+          )
+          AND (
+            LOWER(COALESCE(m.operation_type, '')) LIKE '%movil%'
+            OR LOWER(COALESCE(m.operation_type, '')) LIKE '%móvil%'
+            OR LOWER(COALESCE(m.description, '')) LIKE '%movil%'
+            OR LOWER(COALESCE(m.description, '')) LIKE '%móvil%'
+            OR LOWER(COALESCE(m.reference, '')) LIKE '%movil%'
+            OR LOWER(COALESCE(m.reference, '')) LIKE '%móvil%'
+            OR LOWER(COALESCE(m.transaction_code, '')) IN ('388')
+          )
+        )
       )
     ORDER BY m.id ASC
     `,
@@ -93,10 +114,12 @@ async function bankPosCreditsByLote(bankAccountId, businessDate, posBatchRaw) {
       m.reference,
       m.description,
       m.transaction_code,
+      m.transaction_type,
       m.operation_type,
       m.credit_bs::numeric AS credit_bs,
       m.debit_bs::numeric AS debit_bs,
-      m.category
+      m.category,
+      m.subcategory
     FROM finance_bank_movements m
     WHERE m.bank_account_id = $1
       AND (m.movement_date)::date >= $2::date
@@ -122,10 +145,12 @@ async function bankAllCredits(bankAccountId, businessDate) {
       m.reference,
       m.description,
       m.transaction_code,
+      m.transaction_type,
       m.operation_type,
       m.credit_bs::numeric AS credit_bs,
       m.debit_bs::numeric AS debit_bs,
-      m.category
+      m.category,
+      m.subcategory
     FROM finance_bank_movements m
     WHERE m.bank_account_id = $1
       AND (m.movement_date)::date = $2::date
@@ -273,21 +298,37 @@ export async function getLoyverseBankReconciliationSnapshot({
   if (pm === "pos") {
     if (!batchTrim) {
       movements = [];
-      bankQuery = { mode: "pos_lote_pending", window_days: POS_LOTE_WINDOW_DAYS };
+      bankQuery = {
+        mode: "pos_lote_pending",
+        window_days: POS_LOTE_WINDOW_DAYS,
+        hint_es:
+          "Indicá el mismo lote que en Ventas por tipo de pago; el banco suele repetirlo en referencia o descripción.",
+      };
     } else {
       movements = await bankPosCreditsByLote(bid, d, batchTrim);
       bankQuery = {
         mode: "pos_lote",
         window_days: POS_LOTE_WINDOW_DAYS,
         pos_batch: batchTrim,
+        hint_es: `Abonos con el lote «${batchTrim}» en referencia o descripción (ventana de ${POS_LOTE_WINDOW_DAYS} días desde la fecha de negocio por liquidaciones posteriores).`,
       };
     }
   } else if (pm === "pago_movil") {
     movements = await bankPagoMovilCredits(bid, d);
-    bankQuery = { mode: "pago_movil_day", window_days: 0 };
+    bankQuery = {
+      mode: "pago_movil_day",
+      window_days: 0,
+      hint_es:
+        "Solo créditos del día: código 388 y/o abonos con texto de Pago Móvil (tipo de operación, descripción, referencia o subcategoría clasificada).",
+    };
   } else {
     movements = await bankAllCredits(bid, d);
-    bankQuery = { mode: "all_credits_day", window_days: 0 };
+    bankQuery = {
+      mode: "all_credits_day",
+      window_days: 0,
+      hint_es:
+        "Todos los créditos del día en la cuenta; el cotejo con Loyverse es manual.",
+    };
   }
 
   const bankCount = movements.length;

@@ -251,20 +251,23 @@ export default function BankAccountMovementsMonitor({
     importResult?.data?.import_batch_id,
   ]);
 
-  function handleToolbarImport(e) {
-    e.preventDefault();
+  async function handleBankFilesChosen(ev) {
+    const picked = filesFromFileList(ev.target.files);
+    setImportDedupeHint(null);
+    if (picked.length === 0) {
+      setUploadFiles([]);
+      return;
+    }
     if (rows.length === 0) {
       window.alert(
         "No hay cuentas bancarias. Crea una en Gestionar cuentas antes de importar."
       );
+      setUploadInputKey((k) => k + 1);
       return;
     }
-    if (!uploadFiles.length) {
-      window.alert("Selecciona uno o varios archivos Excel del banco.");
-      return;
-    }
-    handleImport({
-      files: uploadFiles,
+    setUploadFiles(picked);
+    await handleImport({
+      files: picked,
       bankAccountId:
         monitorAccountId != null ? monitorAccountId : undefined,
     });
@@ -345,11 +348,12 @@ export default function BankAccountMovementsMonitor({
               <span className="mb-1 block text-sm font-medium text-zm-sidebar">
                 Importar Excel
               </span>
-              <form
-                onSubmit={handleToolbarImport}
-                className="flex flex-wrap items-center gap-2 min-w-0"
-              >
-                <label className="cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40">
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <label
+                  className={`cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40 ${
+                    importLoading ? "pointer-events-none opacity-60" : ""
+                  }`}
+                >
                   <Upload
                     className="h-4 w-4 shrink-0 opacity-90"
                     aria-hidden
@@ -363,32 +367,21 @@ export default function BankAccountMovementsMonitor({
                     accept=".xls,.xlsx"
                     className="sr-only"
                     aria-label="Seleccionar uno o varios archivos Excel del estado de cuenta"
-                    onChange={(e) => {
-                      setUploadFiles(filesFromFileList(e.target.files));
-                      setImportDedupeHint(null);
-                    }}
+                    disabled={importLoading}
+                    onChange={handleBankFilesChosen}
                   />
                 </label>
                 {uploadFiles.length > 0 && (
-                  <>
-                    <span
-                      className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
-                      title={uploadFiles.map((f) => f.name).join("\n")}
-                    >
-                      {uploadFiles.length === 1
-                        ? uploadFiles[0].name
-                        : `${uploadFiles.length} archivos seleccionados`}
-                    </span>
-                    <button
-                      type="submit"
-                      disabled={importLoading}
-                      className="shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50"
-                    >
-                      {importLoading ? "Importando…" : "Importar"}
-                    </button>
-                  </>
+                  <span
+                    className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
+                    title={uploadFiles.map((f) => f.name).join("\n")}
+                  >
+                    {uploadFiles.length === 1
+                      ? uploadFiles[0].name
+                      : `${uploadFiles.length} archivos seleccionados`}
+                  </span>
                 )}
-              </form>
+              </div>
               {importError && (
                 <p className="mt-1 text-xs text-zm-red">{importError}</p>
               )}

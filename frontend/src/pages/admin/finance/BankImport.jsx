@@ -47,24 +47,24 @@ export default function BankImport({
     }
   }, [result?.success, lastImportBatchId]);
 
-  function handleSubmit(e) {
-    e.preventDefault();
+  const fallbackAccountId = activeAccounts[0]?.id;
 
+  async function handleBankFilesSelected(ev) {
+    const picked = filesFromFileList(ev.target.files);
+    if (picked.length === 0) {
+      setFiles([]);
+      return;
+    }
     if (activeAccounts.length === 0) {
-      alert(
+      window.alert(
         "Agrega o activa al menos una cuenta: menú lateral → Cuentas bancarias → Gestionar cuentas."
       );
+      setFileInputKey((k) => k + 1);
       return;
     }
-
-    if (files.length === 0) {
-      alert("Selecciona uno o varios archivos Excel del banco.");
-      return;
-    }
-
-    const fallbackAccountId = activeAccounts[0]?.id;
-    handleImport({
-      files,
+    setFiles(picked);
+    await handleImport({
+      files: picked,
       bankAccountId: fallbackAccountId,
     });
   }
@@ -104,12 +104,16 @@ export default function BankImport({
             : "bg-white rounded-lg shadow-sm border border-gray-200 p-3 max-w-4xl"
         }
       >
-        <form onSubmit={handleSubmit} className="flex flex-wrap items-center gap-2 min-w-0">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
           <label
             className={
               isZonaMarket
-                ? "cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40"
-                : "cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-md border border-gray-300 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-100 focus-within:ring-2 focus-within:ring-blue-500"
+                ? `cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40 ${
+                    loading ? "pointer-events-none opacity-60" : ""
+                  }`
+                : `cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-md border border-gray-300 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-100 focus-within:ring-2 focus-within:ring-blue-500 ${
+                    loading ? "pointer-events-none opacity-60" : ""
+                  }`
             }
           >
             {isZonaMarket && (
@@ -127,35 +131,21 @@ export default function BankImport({
               accept=".xls,.xlsx"
               className="sr-only"
               aria-label="Seleccionar uno o varios archivos Excel del banco (.xls, .xlsx)"
-              onChange={(e) =>
-                setFiles(filesFromFileList(e.target.files))
-              }
+              disabled={loading}
+              onChange={handleBankFilesSelected}
             />
           </label>
           {files.length > 0 && (
-            <>
-              <span
-                className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
-                title={files.map((f) => f.name).join("\n")}
-              >
-                {files.length === 1
-                  ? files[0].name
-                  : `${files.length} archivos seleccionados`}
-              </span>
-              <button
-                type="submit"
-                disabled={loading}
-                className={
-                  isZonaMarket
-                    ? "shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50"
-                    : "shrink-0 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-1.5 rounded-md text-sm font-medium"
-                }
-              >
-                {loading ? "Importando…" : isZonaMarket ? "Importar" : "Importar archivo(s)"}
-              </button>
-            </>
+            <span
+              className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
+              title={files.map((f) => f.name).join("\n")}
+            >
+              {files.length === 1
+                ? files[0].name
+                : `${files.length} archivos seleccionados`}
+            </span>
           )}
-        </form>
+        </div>
       </div>
 
       {error && (

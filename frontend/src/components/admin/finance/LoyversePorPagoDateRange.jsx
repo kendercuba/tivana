@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { DayPicker } from "react-day-picker";
 import {
   addDays,
+  differenceInCalendarDays,
   endOfMonth,
   endOfWeek,
   format,
@@ -13,6 +14,7 @@ import {
   subWeeks,
 } from "date-fns";
 import { es } from "date-fns/locale";
+import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import "react-day-picker/style.css";
 
 /** Local calendar date → YYYY-MM-DD (no UTC shift). */
@@ -136,11 +138,48 @@ export default function LoyversePorPagoDateRange({
   }, [open, rangeStart, rangeEnd, calendarMonthAnchorYmd]);
 
   function triggerLabel() {
-    if (!rangeStart || !rangeEnd) return "Elegir fechas";
+    if (!rangeStart) return "Elegir fechas";
     const a = ymdToLocalDate(rangeStart);
-    const b = ymdToLocalDate(rangeEnd);
+    const b = ymdToLocalDate(rangeEnd || rangeStart);
     if (!a || !b) return "Elegir fechas";
+    if (localDateToYmd(a) === localDateToYmd(b)) {
+      return format(a, "d MMM yyyy", { locale: es });
+    }
     return `${format(a, "dd/MM/yyyy", { locale: es })} — ${format(b, "dd/MM/yyyy", { locale: es })}`;
+  }
+
+  const minBound = dataMinYmd ? ymdToLocalDate(dataMinYmd) : undefined;
+  const maxBound = dataMaxYmd ? ymdToLocalDate(dataMaxYmd) : undefined;
+
+  function canStepBy(delta) {
+    if (!onApplyRange || !rangeStart) return false;
+    const from = ymdToLocalDate(rangeStart);
+    const to = ymdToLocalDate(rangeEnd || rangeStart);
+    if (!from || !to) return false;
+    const nextStart = addDays(from, delta);
+    const nextEnd = addDays(to, delta);
+    if (minBound) {
+      const lo = atNoonLocal(minBound);
+      if (differenceInCalendarDays(atNoonLocal(nextStart), lo) < 0) return false;
+    }
+    if (maxBound) {
+      const hi = atNoonLocal(maxBound);
+      if (differenceInCalendarDays(atNoonLocal(nextEnd), hi) > 0) return false;
+    }
+    return true;
+  }
+
+  const canStepPrev = canStepBy(-1);
+  const canStepNext = canStepBy(1);
+
+  function stepRangeBy(delta) {
+    if (!canStepBy(delta)) return;
+    const from = ymdToLocalDate(rangeStart);
+    const to = ymdToLocalDate(rangeEnd || rangeStart);
+    if (!from || !to) return;
+    const nextStart = addDays(from, delta);
+    const nextEnd = addDays(to, delta);
+    onApplyRange(localDateToYmd(nextStart), localDateToYmd(nextEnd));
   }
 
   function applyDraftAndClose() {
@@ -430,22 +469,58 @@ export default function LoyversePorPagoDateRange({
       document.body
     );
 
+  const singleDay =
+    rangeStart &&
+    (rangeEnd == null ||
+      String(rangeStart).slice(0, 10) === String(rangeEnd).slice(0, 10));
+
   return (
-    <div className="relative" ref={rootRef}>
-      <button
+    <div className="relative inline-flex max-w-full items-stretch" ref={rootRef}>
+      <div
         ref={triggerRef}
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex min-w-[min(100%,220px)] max-w-full items-center justify-between gap-2 rounded-xl border border-gray-300 bg-white px-3 py-2 text-left text-sm font-medium text-gray-900 shadow-sm transition hover:border-gray-400 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-zm-green/40 focus:ring-offset-1"
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-label="Rango de fechas"
+        className="inline-flex max-w-full min-w-0 items-stretch overflow-hidden rounded-xl border border-gray-300 bg-white shadow-sm ring-offset-1 focus-within:ring-2 focus-within:ring-zm-green/40"
       >
-        <span className="truncate tabular-nums">{triggerLabel()}</span>
-        <span className="text-gray-400 shrink-0 text-xs" aria-hidden>
-          ▾
-        </span>
-      </button>
+        <button
+          type="button"
+          disabled={!canStepPrev}
+          onClick={() => stepRangeBy(-1)}
+          className="shrink-0 border-r border-gray-200 px-2 py-2 text-gray-600 transition hover:bg-gray-50 hover:text-zm-sidebar disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-white"
+          aria-label="Día anterior"
+        >
+          <ChevronLeft className="h-4 w-4 sm:h-[18px] sm:w-[18px]" strokeWidth={2.25} aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 py-2 text-left text-sm font-medium text-gray-900 transition hover:bg-gray-50 focus:outline-none"
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          aria-label="Rango de fechas"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            {singleDay ? (
+              <Calendar
+                className="h-4 w-4 shrink-0 text-zm-green opacity-90"
+                strokeWidth={2.25}
+                aria-hidden
+              />
+            ) : null}
+            <span className="truncate tabular-nums">{triggerLabel()}</span>
+          </span>
+          <span className="text-gray-400 shrink-0 text-xs" aria-hidden>
+            ▾
+          </span>
+        </button>
+        <button
+          type="button"
+          disabled={!canStepNext}
+          onClick={() => stepRangeBy(1)}
+          className="shrink-0 border-l border-gray-200 px-2 py-2 text-gray-600 transition hover:bg-gray-50 hover:text-zm-sidebar disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-white"
+          aria-label="Día siguiente"
+        >
+          <ChevronRight className="h-4 w-4 sm:h-[18px] sm:w-[18px]" strokeWidth={2.25} aria-hidden />
+        </button>
+      </div>
 
       {popoverEl}
     </div>

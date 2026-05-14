@@ -32,6 +32,7 @@ export default function LoyverseVentasCargar() {
     }
     if (reportHint === "auto") {
       setFiles(picked);
+      await handleImport({ files: picked, reportHint: "auto" });
       return;
     }
     setFileHintValidating(true);
@@ -55,24 +56,17 @@ export default function LoyverseVentasCargar() {
       setFileHintError(err.message || "No se pudo validar el archivo.");
       setFiles([]);
       setFileInputKey((k) => k + 1);
+      return;
     } finally {
       setFileHintValidating(false);
     }
-  }
-
-  function handleSubmit(e) {
-    e.preventDefault();
-    if (files.length === 0) {
-      alert("Selecciona uno o varios Excel o CSV exportados desde Loyverse.");
-      return;
-    }
-    handleImport({ files, reportHint });
+    await handleImport({ files: picked, reportHint });
   }
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 pt-4 pb-6 space-y-6">
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 sm:p-4 max-w-2xl">
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <div className="space-y-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
               Tipo de reporte (opcional; si eliges automático, se clasifica por
@@ -81,7 +75,7 @@ export default function LoyverseVentasCargar() {
             <select
               value={reportHint}
               onChange={(e) => setReportHint(e.target.value)}
-              disabled={fileHintValidating}
+              disabled={fileHintValidating || loading}
               className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
             >
               <option value="auto">Detectar automáticamente</option>
@@ -109,7 +103,9 @@ export default function LoyverseVentasCargar() {
             <div className="flex flex-wrap items-center gap-2">
               <label
                 className={`cursor-pointer inline-flex items-center shrink-0 rounded-md border border-gray-300 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 focus-within:ring-2 focus-within:ring-blue-500 ${
-                  fileHintValidating ? "pointer-events-none opacity-60" : ""
+                  fileHintValidating || loading
+                    ? "pointer-events-none opacity-60"
+                    : ""
                 }`}
               >
                 Seleccionar archivo(s)
@@ -120,7 +116,7 @@ export default function LoyverseVentasCargar() {
                   accept={LOYVERSE_UPLOAD_ACCEPT}
                   className="sr-only"
                   aria-label="Seleccionar uno o varios archivos exportados desde Loyverse"
-                  disabled={fileHintValidating}
+                  disabled={fileHintValidating || loading}
                   onChange={handleFileChange}
                 />
               </label>
@@ -145,16 +141,7 @@ export default function LoyverseVentasCargar() {
             )}
           </div>
 
-          {files.length > 0 && (
-            <button
-              type="submit"
-              disabled={loading || fileHintValidating}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-1.5 rounded-md text-sm font-medium"
-            >
-              {loading ? "Importando…" : "Importar"}
-            </button>
-          )}
-        </form>
+        </div>
       </div>
 
       {error && (

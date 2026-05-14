@@ -192,16 +192,15 @@ export default function ZonaMarketArticleList() {
     URL.revokeObjectURL(url);
   }
 
-  async function handleImportSubmit(e) {
-    e.preventDefault();
-    if (uploadFiles.length === 0) return;
+  async function runArticleImport(files) {
+    if (!files?.length) return;
     setImportLoading(true);
     setImportError(null);
     setImportOk(null);
     try {
       let lastImportId = null;
       let totalRows = 0;
-      for (const f of uploadFiles) {
+      for (const f of files) {
         try {
           const data = await importZmLoyverseItemsFile(f);
           const iid = data?.importId ?? data?.import_id;
@@ -211,15 +210,13 @@ export default function ZonaMarketArticleList() {
           totalRows += Number(data?.rowCount ?? data?.row_count ?? 0) || 0;
         } catch (inner) {
           const msg = inner?.message || "Error al importar.";
-          throw new Error(
-            uploadFiles.length > 1 ? `${f.name}: ${msg}` : msg
-          );
+          throw new Error(files.length > 1 ? `${f.name}: ${msg}` : msg);
         }
       }
       setHighlightLastImportId(lastImportId);
       setImportOk(
-        uploadFiles.length > 1
-          ? `Importación correcta: ${uploadFiles.length} archivos, ${totalRows} filas procesadas en total.`
+        files.length > 1
+          ? `Importación correcta: ${files.length} archivos, ${totalRows} filas procesadas en total.`
           : `Importación correcta: ${totalRows} artículos actualizados.`
       );
       setUploadFiles([]);
@@ -232,6 +229,18 @@ export default function ZonaMarketArticleList() {
     } finally {
       setImportLoading(false);
     }
+  }
+
+  async function handleArticleFilesChange(ev) {
+    const picked = filesFromFileList(ev.target.files);
+    setImportError(null);
+    setImportOk(null);
+    if (picked.length === 0) {
+      setUploadFiles([]);
+      return;
+    }
+    setUploadFiles(picked);
+    await runArticleImport(picked);
   }
 
   return (
@@ -276,10 +285,7 @@ export default function ZonaMarketArticleList() {
 
         {topTab === TOP_TAB_LISTA && (
           <section className="rounded-xl border border-zm-green/20 bg-white p-3 sm:p-4 shadow-sm space-y-3">
-          <form
-            onSubmit={handleImportSubmit}
-            className="flex flex-wrap items-center gap-2 min-w-0"
-          >
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
             <label
               className={`cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40 ${
                 importLoading ? "pointer-events-none opacity-60" : ""
@@ -299,33 +305,20 @@ export default function ZonaMarketArticleList() {
                 className="sr-only"
                 aria-label="Seleccionar uno o varios archivos de artículos Loyverse (CSV o Excel)"
                 disabled={importLoading}
-                onChange={(ev) => {
-                  setUploadFiles(filesFromFileList(ev.target.files));
-                  setImportError(null);
-                  setImportOk(null);
-                }}
+                onChange={handleArticleFilesChange}
               />
             </label>
             {uploadFiles.length > 0 && (
-              <>
-                <span
-                  className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
-                  title={uploadFiles.map((f) => f.name).join("\n")}
-                >
-                  {uploadFiles.length === 1
-                    ? uploadFiles[0].name
-                    : `${uploadFiles.length} archivos seleccionados`}
-                </span>
-                <button
-                  type="submit"
-                  disabled={importLoading}
-                  className="shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50"
-                >
-                  {importLoading ? "Importando…" : "Importar"}
-                </button>
-              </>
+              <span
+                className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
+                title={uploadFiles.map((f) => f.name).join("\n")}
+              >
+                {uploadFiles.length === 1
+                  ? uploadFiles[0].name
+                  : `${uploadFiles.length} archivos seleccionados`}
+              </span>
             )}
-          </form>
+          </div>
           {importError && (
             <p className="text-sm text-zm-red" role="alert">
               {importError}

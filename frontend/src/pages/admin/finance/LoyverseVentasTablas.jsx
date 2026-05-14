@@ -64,10 +64,9 @@ function formatQtySold(value) {
 
 /**
  * Misma carga que en la pestaña de tabla: import desde «Historial de cargas»
- * sin cambiar el rango del calendario (el resaltado indica el lote nuevo).
+ * (la importación se dispara al elegir archivos, sin botón «Importar»).
  */
 function LoyverseHistoryTabUploadForm({
-  onSubmit,
   onFilesSelected,
   uploadInputKey,
   uploadFiles,
@@ -80,10 +79,12 @@ function LoyverseHistoryTabUploadForm({
 }) {
   return (
     <section className="rounded-xl border border-zm-green/20 bg-white p-3 sm:p-4 shadow-sm space-y-2">
-      <form onSubmit={onSubmit} className={formClassName}>
+      <div className={formClassName}>
         <label
           className={`cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40 ${
-            fileHintValidating ? "pointer-events-none opacity-60" : ""
+            fileHintValidating || importLoading
+              ? "pointer-events-none opacity-60"
+              : ""
           }`}
         >
           <Upload
@@ -99,30 +100,24 @@ function LoyverseHistoryTabUploadForm({
             accept={LOYVERSE_UPLOAD_ACCEPT}
             className="sr-only"
             aria-label={fileInputAriaLabel}
-            disabled={fileHintValidating}
+            disabled={fileHintValidating || importLoading}
             onChange={onFilesSelected}
           />
         </label>
         {uploadFiles.length > 0 && (
-          <>
-            <span
-              className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
-              title={uploadFiles.map((f) => f.name).join("\n")}
-            >
-              {uploadFiles.length === 1
-                ? uploadFiles[0].name
-                : `${uploadFiles.length} archivos seleccionados`}
-            </span>
-            <button
-              type="submit"
-              disabled={importLoading || fileHintValidating}
-              className="shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50"
-            >
-              {importLoading ? "Importando…" : "Importar"}
-            </button>
-          </>
+          <span
+            className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
+            title={uploadFiles.map((f) => f.name).join("\n")}
+          >
+            {uploadFiles.length === 1
+              ? uploadFiles[0].name
+              : `${uploadFiles.length} archivos seleccionados`}
+          </span>
         )}
-      </form>
+        {importLoading && (
+          <span className="text-xs text-gray-600">Importando…</span>
+        )}
+      </div>
       {importError && <p className="text-sm text-zm-red">{importError}</p>}
       {fileHintValidating && (
         <p className="text-xs text-gray-600">Validando archivos…</p>
@@ -159,12 +154,6 @@ function addDaysYmd(ymdStr, deltaDays) {
   return d.toISOString().slice(0, 10);
 }
 
-function daysInclusive(rangeStart, rangeEnd) {
-  const a = new Date(`${rangeStart}T12:00:00`);
-  const b = new Date(`${rangeEnd}T12:00:00`);
-  return Math.max(1, Math.round((b - a) / 86400000) + 1);
-}
-
 /** Fecha local del navegador en YYYY-MM-DD (para filas “hasta hoy”). */
 function localTodayYmd() {
   const n = new Date();
@@ -182,6 +171,17 @@ function minYmd(a, b) {
 function maxYmd(a, b) {
   if (!a || !b) return a || b || "";
   return a >= b ? a : b;
+}
+
+/** Min / max business_date in Loyverse rows (full history span for the calendar after import). */
+function dataDateSpanFromLoyverseRows(rows) {
+  const uniq = [
+    ...new Set((rows || []).map((r) => String(r.business_date || "").slice(0, 10))),
+  ]
+    .filter(Boolean)
+    .sort();
+  if (uniq.length === 0) return null;
+  return { start: uniq[0], end: uniq[uniq.length - 1] };
 }
 
 /** Etiqueta como en Loyverse / Excel (Tarjeta, Pago Móvil, Efectivo). */
@@ -526,7 +526,21 @@ export function LoyverseResumenVentas({
     setHistoryRefresh((n) => n + 1);
     setUploadFiles([]);
     setUploadInputKey((k) => k + 1);
-    void refreshFacts();
+
+    let cancelled = false;
+    void (async () => {
+      const data = await refreshFacts();
+      if (cancelled || !data) return;
+      const span = dataDateSpanFromLoyverseRows(data);
+      if (span) {
+        setRangeStart(span.start);
+        setRangeEnd(span.end);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     importResult?.data?.importBatchId,
     importResult?.success,
@@ -687,13 +701,6 @@ export function LoyverseResumenVentas({
     };
   }, [filteredRows, drafts, ratesByDate]);
 
-  function shiftRange(direction) {
-    if (!rangeStart || !rangeEnd) return;
-    const step = daysInclusive(rangeStart, rangeEnd);
-    setRangeStart(addDaysYmd(rangeStart, direction * step));
-    setRangeEnd(addDaysYmd(rangeEnd, direction * step));
-  }
-
   function rateDisplay(dateStr) {
     if (!dateStr) return "";
     if (Object.prototype.hasOwnProperty.call(drafts, dateStr)) {
@@ -747,18 +754,11 @@ export function LoyverseResumenVentas({
       setFileHintError(err.message || "No se pudo validar el archivo.");
       setUploadFiles([]);
       setUploadInputKey((k) => k + 1);
+      return;
     } finally {
       setFileHintValidating(false);
     }
-  }
-
-  function handleResumenExcelSubmit(e) {
-    e.preventDefault();
-    if (uploadFiles.length === 0) {
-      window.alert("Selecciona un archivo Excel o CSV exportado desde Loyverse.");
-      return;
-    }
-    handleImport({ files: uploadFiles, reportHint: "daily_summary" });
+    await handleImport({ files: picked, reportHint: "daily_summary" });
   }
 
   async function commitRate(dateStr) {
@@ -825,7 +825,6 @@ export function LoyverseResumenVentas({
       {topTab === "historial" ? (
         <div className="px-4 pb-6 pt-1 space-y-3">
           <LoyverseHistoryTabUploadForm
-            onSubmit={handleResumenExcelSubmit}
             onFilesSelected={handleResumenFileSelected}
             uploadInputKey={uploadInputKey}
             uploadFiles={uploadFiles}
@@ -861,15 +860,6 @@ export function LoyverseResumenVentas({
             <>
               <section className="rounded-xl border border-zm-green/20 bg-white p-3 sm:p-4 shadow-sm space-y-3">
                 <div className="flex flex-wrap items-center gap-2 min-w-0">
-                  <button
-                    type="button"
-                    className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
-                    title="Periodo anterior"
-                    aria-label="Periodo anterior"
-                    onClick={() => shiftRange(-1)}
-                  >
-                    ‹
-                  </button>
                   <LoyversePorPagoDateRange
                     rangeStart={rangeStart}
                     rangeEnd={rangeEnd}
@@ -880,23 +870,13 @@ export function LoyverseResumenVentas({
                       setRangeEnd(endYmd);
                     }}
                   />
-                  <button
-                    type="button"
-                    className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
-                    title="Periodo siguiente"
-                    aria-label="Periodo siguiente"
-                    onClick={() => shiftRange(1)}
-                  >
-                    ›
-                  </button>
 
-                  <form
-                    onSubmit={handleResumenExcelSubmit}
-                    className="flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto sm:ml-auto sm:justify-end"
-                  >
+                  <div className="flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto sm:ml-auto sm:justify-end">
                     <label
                       className={`cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40 ${
-                        fileHintValidating ? "pointer-events-none opacity-60" : ""
+                        fileHintValidating || importLoading
+                          ? "pointer-events-none opacity-60"
+                          : ""
                       }`}
                     >
                       <Upload
@@ -912,30 +892,21 @@ export function LoyverseResumenVentas({
                         accept={LOYVERSE_UPLOAD_ACCEPT}
                         className="sr-only"
                         aria-label="Seleccionar uno o varios archivos del reporte Resumen de ventas Loyverse"
-                        disabled={fileHintValidating}
+                        disabled={fileHintValidating || importLoading}
                         onChange={handleResumenFileSelected}
                       />
                     </label>
                     {uploadFiles.length > 0 && (
-                      <>
-                        <span
-                          className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
-                          title={uploadFiles.map((f) => f.name).join("\n")}
-                        >
-                          {uploadFiles.length === 1
-                            ? uploadFiles[0].name
-                            : `${uploadFiles.length} archivos seleccionados`}
-                        </span>
-                        <button
-                          type="submit"
-                          disabled={importLoading || fileHintValidating}
-                          className="shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50"
-                        >
-                          {importLoading ? "Importando…" : "Importar"}
-                        </button>
-                      </>
+                      <span
+                        className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
+                        title={uploadFiles.map((f) => f.name).join("\n")}
+                      >
+                        {uploadFiles.length === 1
+                          ? uploadFiles[0].name
+                          : `${uploadFiles.length} archivos seleccionados`}
+                      </span>
                     )}
-                  </form>
+                  </div>
                 </div>
 
                 {importError && (
@@ -1226,7 +1197,21 @@ export function LoyverseVentasPorPago({
     setHistoryRefresh((n) => n + 1);
     setUploadFiles([]);
     setUploadInputKey((k) => k + 1);
-    void refreshFacts();
+
+    let cancelled = false;
+    void (async () => {
+      const data = await refreshFacts();
+      if (cancelled || !data) return;
+      const span = dataDateSpanFromLoyverseRows(data);
+      if (span) {
+        setRangeStart(span.start);
+        setRangeEnd(span.end);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     importResult?.data?.importBatchId,
     importResult?.success,
@@ -1452,25 +1437,11 @@ export function LoyverseVentasPorPago({
       setFileHintError(err.message || "No se pudo validar el archivo.");
       setUploadFiles([]);
       setUploadInputKey((k) => k + 1);
+      return;
     } finally {
       setFileHintValidating(false);
     }
-  }
-
-  function handlePagoExcelSubmit(e) {
-    e.preventDefault();
-    if (uploadFiles.length === 0) {
-      window.alert("Selecciona un archivo Excel o CSV exportado desde Loyverse.");
-      return;
-    }
-    handleImport({ files: uploadFiles, reportHint: "by_payment" });
-  }
-
-  function shiftRange(direction) {
-    if (!rangeStart || !rangeEnd) return;
-    const step = daysInclusive(rangeStart, rangeEnd);
-    setRangeStart(addDaysYmd(rangeStart, direction * step));
-    setRangeEnd(addDaysYmd(rangeEnd, direction * step));
+    await handleImport({ files: picked, reportHint: "by_payment" });
   }
 
   function exportCsv() {
@@ -1579,7 +1550,6 @@ export function LoyverseVentasPorPago({
       {topTab === "historial" ? (
         <div className="w-full max-w-[1600px] px-4 sm:px-6 pb-8 pt-1 space-y-3">
           <LoyverseHistoryTabUploadForm
-            onSubmit={handlePagoExcelSubmit}
             onFilesSelected={handlePagoFileSelected}
             uploadInputKey={uploadInputKey}
             uploadFiles={uploadFiles}
@@ -1613,15 +1583,6 @@ export function LoyverseVentasPorPago({
                 <div className="p-3 sm:p-4 space-y-3 border-b border-gray-100">
                   <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-3">
                     <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
-                      <button
-                        type="button"
-                        className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
-                        title="Periodo anterior"
-                        aria-label="Periodo anterior"
-                        onClick={() => shiftRange(-1)}
-                      >
-                        ‹
-                      </button>
                       <LoyversePorPagoDateRange
                         rangeStart={rangeStart}
                         rangeEnd={rangeEnd}
@@ -1633,23 +1594,13 @@ export function LoyverseVentasPorPago({
                           setRangeEnd(endYmd);
                         }}
                       />
-                      <button
-                        type="button"
-                        className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
-                        title="Periodo siguiente"
-                        aria-label="Periodo siguiente"
-                        onClick={() => shiftRange(1)}
-                      >
-                        ›
-                      </button>
 
-                      <form
-                        onSubmit={handlePagoExcelSubmit}
-                        className="flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto lg:ml-auto"
-                      >
+                      <div className="flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto lg:ml-auto">
                         <label
                           className={`cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40 ${
-                            fileHintValidating ? "pointer-events-none opacity-60" : ""
+                            fileHintValidating || importLoading
+                              ? "pointer-events-none opacity-60"
+                              : ""
                           }`}
                         >
                           <Upload
@@ -1665,30 +1616,21 @@ export function LoyverseVentasPorPago({
                             accept={LOYVERSE_UPLOAD_ACCEPT}
                             className="sr-only"
                             aria-label="Seleccionar uno o varios archivos del reporte Ventas por tipo de pago Loyverse"
-                            disabled={fileHintValidating}
+                            disabled={fileHintValidating || importLoading}
                             onChange={handlePagoFileSelected}
                           />
                         </label>
                         {uploadFiles.length > 0 && (
-                          <>
-                            <span
-                              className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
-                              title={uploadFiles.map((f) => f.name).join("\n")}
-                            >
-                              {uploadFiles.length === 1
-                                ? uploadFiles[0].name
-                                : `${uploadFiles.length} archivos seleccionados`}
-                            </span>
-                            <button
-                              type="submit"
-                              disabled={importLoading || fileHintValidating}
-                              className="shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50"
-                            >
-                              {importLoading ? "Importando…" : "Importar"}
-                            </button>
-                          </>
+                          <span
+                            className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
+                            title={uploadFiles.map((f) => f.name).join("\n")}
+                          >
+                            {uploadFiles.length === 1
+                              ? uploadFiles[0].name
+                              : `${uploadFiles.length} archivos seleccionados`}
+                          </span>
                         )}
-                      </form>
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-2 shrink-0 lg:justify-end">
                       <button
@@ -1872,33 +1814,7 @@ export function LoyverseVentasPorPago({
                             </td>
                           )}
                           <td className="px-1.5 py-2 sm:px-2 min-w-0 align-middle text-left border-r border-gray-100">
-                            <div className="flex min-h-[2.25rem] w-full min-w-0 items-center justify-between gap-1.5 pl-0.5 sm:pl-1 pr-0.5">
-                              <div className="min-w-0 shrink">
-                                <PaymentMethodWithIcon paymentMethod={r.payment_method} />
-                              </div>
-                              {(() => {
-                                const pm = String(r.payment_method || "").toLowerCase();
-                                if (pm !== "pago_movil" && pm !== "pos") return null;
-                                const q = new URLSearchParams({
-                                  date: day.dateYmd,
-                                  paymentMethod: pm,
-                                });
-                                if (pm === "pos") {
-                                  const lot = String(
-                                    posBatchByDate[day.dateYmd] ?? ""
-                                  ).trim();
-                                  if (lot) q.set("posBatch", lot);
-                                }
-                                return (
-                                  <Link
-                                    to={`${financeBase}/conciliacion?${q.toString()}`}
-                                    className="shrink-0 text-xs font-semibold text-zm-green hover:underline"
-                                  >
-                                    Conciliar
-                                  </Link>
-                                );
-                              })()}
-                            </div>
+                            <PaymentMethodWithIcon paymentMethod={r.payment_method} />
                           </td>
                           <td className="px-1.5 py-2 sm:px-2 align-middle text-right">
                             <div className={paymentCountInnerClass}>{r.txns}</div>
@@ -2104,7 +2020,21 @@ export function LoyverseVentasPorArticulo({
     setHistoryRefresh((n) => n + 1);
     setUploadFiles([]);
     setUploadInputKey((k) => k + 1);
-    void refreshFacts();
+
+    let cancelled = false;
+    void (async () => {
+      const data = await refreshFacts();
+      if (cancelled || !data) return;
+      const span = dataDateSpanFromLoyverseRows(data);
+      if (span) {
+        setRangeStart(span.start);
+        setRangeEnd(span.end);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     importResult?.data?.importBatchId,
     importResult?.success,
@@ -2244,27 +2174,11 @@ export function LoyverseVentasPorArticulo({
       setFileHintError(err2.message || "No se pudo validar el archivo.");
       setUploadFiles([]);
       setUploadInputKey((k) => k + 1);
+      return;
     } finally {
       setFileHintValidating(false);
     }
-  }
-
-  function handleArticuloExcelSubmit(e) {
-    e.preventDefault();
-    if (uploadFiles.length === 0) {
-      window.alert(
-        "Selecciona un archivo Excel o CSV exportado desde Loyverse."
-      );
-      return;
-    }
-    handleImport({ files: uploadFiles, reportHint: "by_item" });
-  }
-
-  function shiftRange(direction) {
-    if (!rangeStart || !rangeEnd) return;
-    const step = daysInclusive(rangeStart, rangeEnd);
-    setRangeStart(addDaysYmd(rangeStart, direction * step));
-    setRangeEnd(addDaysYmd(rangeEnd, direction * step));
+    await handleImport({ files: picked, reportHint: "by_item" });
   }
 
   function exportCsv() {
@@ -2392,7 +2306,6 @@ export function LoyverseVentasPorArticulo({
       {topTab === "historial" ? (
         <div className="w-full max-w-[1600px] px-4 sm:px-6 pb-8 pt-1 space-y-3">
           <LoyverseHistoryTabUploadForm
-            onSubmit={handleArticuloExcelSubmit}
             onFilesSelected={handleArticuloFileSelected}
             uploadInputKey={uploadInputKey}
             uploadFiles={uploadFiles}
@@ -2425,42 +2338,21 @@ export function LoyverseVentasPorArticulo({
               <section className="rounded-xl border border-zm-green/20 bg-white p-3 sm:p-4 shadow-sm space-y-3">
                 <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-3">
                   <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
-                      <button
-                        type="button"
-                        className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
-                        title="Periodo anterior"
-                        aria-label="Periodo anterior"
-                        onClick={() => shiftRange(-1)}
-                      >
-                        ‹
-                      </button>
-                      <LoyversePorPagoDateRange
-                        rangeStart={rangeStart}
-                        rangeEnd={rangeEnd}
-                        dataMinYmd={dataMinYmd}
-                        dataMaxYmd={dataMaxYmd}
-                        onApplyRange={(startYmd, endYmd) => {
-                          setRangeStart(startYmd);
-                          setRangeEnd(endYmd);
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-gray-700 hover:bg-gray-50 shrink-0"
-                        title="Periodo siguiente"
-                        aria-label="Periodo siguiente"
-                        onClick={() => shiftRange(1)}
-                      >
-                        ›
-                      </button>
+                    <LoyversePorPagoDateRange
+                      rangeStart={rangeStart}
+                      rangeEnd={rangeEnd}
+                      dataMinYmd={dataMinYmd}
+                      dataMaxYmd={dataMaxYmd}
+                      onApplyRange={(startYmd, endYmd) => {
+                        setRangeStart(startYmd);
+                        setRangeEnd(endYmd);
+                      }}
+                    />
 
-                      <form
-                        onSubmit={handleArticuloExcelSubmit}
-                        className="flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto lg:ml-auto"
-                      >
+                    <div className="flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto lg:ml-auto">
                         <label
                           className={`cursor-pointer inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-zm-green/40 bg-white px-3 py-2 text-xs font-semibold text-zm-green hover:bg-zm-green/5 focus-within:ring-2 focus-within:ring-zm-green/40 ${
-                            fileHintValidating
+                            fileHintValidating || importLoading
                               ? "pointer-events-none opacity-60"
                               : ""
                           }`}
@@ -2478,30 +2370,21 @@ export function LoyverseVentasPorArticulo({
                             accept={LOYVERSE_UPLOAD_ACCEPT}
                             className="sr-only"
                             aria-label="Seleccionar uno o varios archivos del reporte Ventas por artículo Loyverse"
-                            disabled={fileHintValidating}
+                            disabled={fileHintValidating || importLoading}
                             onChange={handleArticuloFileSelected}
                           />
                         </label>
                         {uploadFiles.length > 0 && (
-                          <>
-                            <span
-                              className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
-                              title={uploadFiles.map((f) => f.name).join("\n")}
-                            >
-                              {uploadFiles.length === 1
-                                ? uploadFiles[0].name
-                                : `${uploadFiles.length} archivos seleccionados`}
-                            </span>
-                            <button
-                              type="submit"
-                              disabled={importLoading || fileHintValidating}
-                              className="shrink-0 rounded-lg bg-zm-green px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zm-green-dark focus-visible:outline focus-visible:ring-2 focus-visible:ring-zm-green/45 disabled:opacity-50"
-                            >
-                              {importLoading ? "Importando…" : "Importar"}
-                            </button>
-                          </>
+                          <span
+                            className="text-xs text-gray-700 truncate min-w-0 max-w-[10rem] sm:max-w-[18rem] font-medium"
+                            title={uploadFiles.map((f) => f.name).join("\n")}
+                          >
+                            {uploadFiles.length === 1
+                              ? uploadFiles[0].name
+                              : `${uploadFiles.length} archivos seleccionados`}
+                          </span>
                         )}
-                      </form>
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-2 shrink-0 lg:justify-end">
                       <button
